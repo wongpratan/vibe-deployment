@@ -31,16 +31,16 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={{ maxWidth: 360, margin: "80px auto", padding: 24 }}>
-      <h1 style={{ marginBottom: 24 }}>{mode === "login" ? "Login" : "Register"}</h1>
-      <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <main className="login-main">
+      <h1 className="login-title">{mode === "login" ? "Login" : "Register"}</h1>
+      <form onSubmit={submit} className="login-form">
         <input
           type="email"
           placeholder="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          style={inputStyle}
+          className="input input-plain"
         />
         <input
           type="password"
@@ -49,35 +49,19 @@ export default function LoginPage() {
           onChange={(e) => setPassword(e.target.value)}
           required
           minLength={8}
-          style={inputStyle}
+          className="input input-plain"
         />
-        <button type="submit" disabled={busy} style={btnStyle}>
+        <button type="submit" disabled={busy} className="btn btn-primary">
           {busy ? "..." : mode === "login" ? "Login" : "Register"}
         </button>
       </form>
-      {err && <p style={{ color: "#f66", marginTop: 12 }}>{err}</p>}
+      {err && <p className="login-error">{err}</p>}
       <button
         onClick={() => setMode(mode === "login" ? "register" : "login")}
-        style={{ ...btnStyle, marginTop: 16, background: "transparent", border: "1px solid #444" }}
+        className="btn-ghost login-toggle"
       >
         {mode === "login" ? "Need an account? Register" : "Have an account? Login"}
       </button>
     </main>
   );
 }
-
-const inputStyle: React.CSSProperties = {
-  padding: 10,
-  background: "#1a1a1f",
-  border: "1px solid #333",
-  color: "#eee",
-  borderRadius: 6,
-};
-const btnStyle: React.CSSProperties = {
-  padding: 10,
-  background: "#3b82f6",
-  border: "none",
-  color: "#fff",
-  borderRadius: 6,
-  cursor: "pointer",
-};

@@ -16,6 +16,16 @@ export const chats = pgTable("chats", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const deploymentRequirements = pgTable("deployment_requirements", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  chatId: uuid("chat_id").references(() => chats.id, { onDelete: "set null" }),
+  requirements: jsonb("requirements").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const messages = pgTable("messages", {
   id: uuid("id").defaultRandom().primaryKey(),
   chatId: uuid("chat_id")
