@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bot, Check, LogOut, Menu, Trash2, User, X } from "lucide-react";
+import { Bot, LogOut, Menu, Trash2, User } from "lucide-react";
 import DynamicInput, { type InputRequest } from "./DynamicInput";
 
 type Msg =
@@ -19,20 +19,60 @@ function unwrapUserPayload(content: string): string {
   return content;
 }
 
+function humanizeName(name: string): string {
+  return name.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function tryParseJson(s: string): unknown {
+  const trimmed = (s ?? "").trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+}
+
+function summarizeValue(v: unknown, depth = 0): string {
+  if (v === null || v === undefined || v === "") return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (Array.isArray(v)) {
+    if (v.length === 0) return "none";
+    if (depth > 1) return `${v.length} items`;
+    return v.map((x) => summarizeValue(x, depth + 1)).filter(Boolean).join(", ");
+  }
+  if (typeof v === "object") {
+    const entries = Object.entries(v as Record<string, unknown>);
+    if (entries.length === 0) return "";
+    if (depth > 1) return `${entries.length} fields`;
+    return entries
+      .map(([k, val]) => {
+        const s = summarizeValue(val, depth + 1);
+        return s ? `${humanizeName(k)}: ${s}` : "";
+      })
+      .filter(Boolean)
+      .join(", ");
+  }
+  return String(v);
+}
+
+function naturalToolCall(name: string, argsJson: string): string {
+  const parsed = tryParseJson(argsJson);
+  const summary = parsed !== null ? summarizeValue(parsed) : argsJson;
+  return summary ? `→ Calling ${humanizeName(name)} with ${summary}` : `→ Calling ${humanizeName(name)}`;
+}
+
+function naturalToolResult(name: string, content: string): string {
+  const parsed = tryParseJson(content);
+  const summary = parsed !== null ? summarizeValue(parsed) : content;
+  return summary ? `${humanizeName(name)} returned: ${summary}` : `${humanizeName(name)} returned (empty)`;
+}
+
 const INITIAL_GREETING: Msg = {
   role: "assistant",
   content:
-    `Hi! I'll help you define your application's deployment requirements.
-To get started, what's the name of your app?`,
-};
-
-const INITIAL_INPUT: InputRequest = {
-  inputType: "text",
-  label: "What's the app name?",
-  fieldName: "application name",
-  placeholder: "my-app",
-  required: true,
-  toolCallId: "",
+    "Hi! I'm your Coolify assistant. Ask me about servers, projects, applications, databases, or deployments.",
 };
 
 export default function ChatWindow() {
@@ -40,11 +80,7 @@ export default function ChatWindow() {
   const [messages, setMessages] = useState<Msg[]>([INITIAL_GREETING]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<
-    { phase: "saving" | "saved" | "error"; detail?: string } | null
-  >(null);
-  const SAVE_TOOL = "save_deployment_requirements";
-  const [pendingInput, setPendingInput] = useState<InputRequest | null>(INITIAL_INPUT);
+  const [pendingInput, setPendingInput] = useState<InputRequest | null>(null);
   const chatIdRef = useRef<string | null>(null);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [apps, setApps] = useState<AppItem[]>([]);
@@ -70,9 +106,8 @@ export default function ChatWindow() {
     chatIdRef.current = null;
     setActiveChatId(null);
     setMessages([INITIAL_GREETING]);
-    setPendingInput(INITIAL_INPUT);
+    setPendingInput(null);
     setBusy(false);
-    setSaveStatus(null);
   }
 
   async function loadChat(id: string) {
@@ -86,14 +121,33 @@ export default function ChatWindow() {
     const rows = (await res.json()) as Array<{
       role: string;
       content: string;
-      toolCalls: unknown;
+      toolCalls: any;
+      toolCallId: string | null;
     }>;
+    const nameById = new Map<string, string>();
+    for (const r of rows) {
+      if (r.role === "assistant" && Array.isArray(r.toolCalls)) {
+        for (const tc of r.toolCalls) {
+          if (tc?.id && tc?.function?.name) nameById.set(tc.id, tc.function.name);
+        }
+      }
+    }
     const mapped: Msg[] = [];
     for (const r of rows) {
-      if (r.role === "tool") continue;
-      if (r.role === "assistant" && !r.content) continue;
-      if (r.role === "user" || r.role === "assistant") {
-        mapped.push({ role: r.role, content: r.content });
+      if (r.role === "user") {
+        mapped.push({ role: "user", content: r.content });
+      } else if (r.role === "assistant") {
+        if (r.content) mapped.push({ role: "assistant", content: r.content });
+        if (Array.isArray(r.toolCalls)) {
+          for (const tc of r.toolCalls) {
+            const fname = tc?.function?.name ?? "tool";
+            const args = tc?.function?.arguments ?? "";
+            mapped.push({ role: "tool", name: fname, content: naturalToolCall(fname, args) });
+          }
+        }
+      } else if (r.role === "tool") {
+        const fname = (r.toolCallId && nameById.get(r.toolCallId)) || "tool";
+        mapped.push({ role: "tool", name: fname, content: naturalToolResult(fname, r.content) });
       }
     }
     chatIdRef.current = id;
@@ -101,7 +155,6 @@ export default function ChatWindow() {
     setMessages(mapped.length ? mapped : [INITIAL_GREETING]);
     setPendingInput(null);
     setBusy(false);
-    setSaveStatus(null);
   }
 
   async function deleteApp(id: string) {
@@ -181,25 +234,14 @@ export default function ChatWindow() {
             return [...m.slice(0, -1), { ...last, content: last.content + ev.delta }];
           });
         } else if (ev.type === "tool_call") {
-          if (ev.name === SAVE_TOOL) {
-            setSaveStatus({ phase: "saving" });
-          } else {
-            setMessages((m) => [...m, { role: "tool", name: ev.name, content: `→ ${ev.args}` }, { role: "assistant", content: "" }]);
-          }
+          console.log("[tool_call]", ev.name, ev.args);
+          setMessages((m) => {
+            const last = m[m.length - 1];
+            if (last?.role === "assistant" && !last.content) return m;
+            return [...m, { role: "assistant", content: "" }];
+          });
         } else if (ev.type === "tool_result") {
-          if (ev.name === SAVE_TOOL) {
-            let parsed: any = null;
-            try { parsed = JSON.parse(ev.result); } catch {}
-            if (parsed?.status === "saved") {
-              setSaveStatus({ phase: "saved" });
-              setTimeout(() => setSaveStatus(null), 4000);
-              refreshApps();
-            } else {
-              setSaveStatus({ phase: "error", detail: parsed?.error ?? ev.result });
-            }
-          } else {
-            setMessages((m) => [...m, { role: "tool", name: ev.name, content: ev.result }]);
-          }
+          console.log("[tool_result]", ev.name, ev.result);
         } else if (ev.type === "input_request") {
           setMessages((m) => {
             const last = m[m.length - 1];
@@ -240,16 +282,6 @@ export default function ChatWindow() {
     await fetch("/api/logout", { method: "POST" });
     router.push("/login");
   }
-
-  const toastClass = saveStatus
-    ? `toast ${
-        saveStatus.phase === "saving"
-          ? "is-saving"
-          : saveStatus.phase === "saved"
-          ? "is-saved"
-          : "is-error"
-      }`
-    : "";
 
   return (
     <div className="app-shell">
@@ -293,36 +325,6 @@ export default function ChatWindow() {
       )}
 
       <div className="main-col">
-        {saveStatus && (
-          <div className={toastClass}>
-            {saveStatus.phase === "saving" && (
-              <>
-                <span className="save-spinner" />
-                <span>Saving deployment requirements…</span>
-              </>
-            )}
-            {saveStatus.phase === "saved" && (
-              <>
-                <Check size={16} strokeWidth={3} />
-                <span>Deployment saved</span>
-              </>
-            )}
-            {saveStatus.phase === "error" && (
-              <>
-                <X size={16} strokeWidth={3} />
-                <span>{saveStatus.detail ?? "Save failed"}</span>
-                <button
-                  onClick={() => setSaveStatus(null)}
-                  className="btn-toast-dismiss"
-                  aria-label="Dismiss"
-                >
-                  ×
-                </button>
-              </>
-            )}
-          </div>
-        )}
-
         <header className="app-header">
           <div className="app-header-left">
             <button onClick={() => setSidebarOpen((v) => !v)} title="Toggle applications" className="btn-icon">

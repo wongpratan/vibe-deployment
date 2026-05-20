@@ -10,6 +10,8 @@ const schema = z.object({
   JWT_SECRET: z.string().min(16),
   BRAVE_API_KEY: z.string().optional().default(""),
   FRONTEND_ORIGIN: z.string().default("http://localhost:3000"),
+  COOLIFY_BASE_URL: z.string().url(),
+  COOLIFY_ACCESS_TOKEN: z.string().min(1),
 });
 
 export const env = schema.parse(process.env);

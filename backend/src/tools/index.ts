@@ -1,15 +1,18 @@
-import { saveDeploymentRequirementsTool, type ToolContext } from "./deployment.js";
+import { getCoolifyTools, isCoolifyTool, callCoolifyTool } from "../mcp/coolify.js";
 
-type Tool = {
-  schema: {
-    type: "function";
-    function: { name: string; description: string; parameters: Record<string, unknown> };
-  };
+export type ToolContext = { userId: string; chatId: string };
+
+type OpenAITool = {
+  type: "function";
+  function: { name: string; description: string; parameters: Record<string, unknown> };
+};
+
+type StaticTool = {
+  schema: OpenAITool;
   execute: (args: any, ctx: ToolContext) => Promise<string>;
 };
 
-const registry: Record<string, Tool> = {
-  save_deployment_requirements: saveDeploymentRequirementsTool,
+const staticRegistry: Record<string, StaticTool> = {
   request_user_input: {
     schema: {
       type: "function",
@@ -32,7 +35,8 @@ const registry: Record<string, Tool> = {
             },
             fieldName: {
               type: "string",
-              description: "Short noun phrase naming the field (e.g. 'application name', 'GitHub repo URL', 'deploy environment'). Used to label the user's reply so the AI never confuses which question the value answers. Use lowercase, no trailing punctuation.",
+              description:
+                "Short noun phrase naming the field (e.g. 'application name', 'GitHub repo URL', 'server UUID'). Used to label the user's reply so the AI never confuses which question the value answers. Use lowercase, no trailing punctuation.",
             },
             placeholder: {
               type: "string",
@@ -55,20 +59,41 @@ const registry: Record<string, Tool> = {
   },
 };
 
-export const toolSchemas = Object.values(registry).map((t) => t.schema);
+export async function loadToolSchemas(): Promise<OpenAITool[]> {
+  const staticSchemas = Object.values(staticRegistry).map((t) => t.schema);
+  try {
+    const mcpSchemas = await getCoolifyTools();
+    return [...staticSchemas, ...mcpSchemas];
+  } catch (err) {
+    console.error("[tools] failed to load coolify mcp tools:", err);
+    return staticSchemas;
+  }
+}
 
 export async function dispatchTool(name: string, rawArgs: string, ctx: ToolContext): Promise<string> {
-  const tool = registry[name];
-  if (!tool) return JSON.stringify({ error: `unknown tool: ${name}` });
   let args: unknown;
   try {
     args = rawArgs ? JSON.parse(rawArgs) : {};
   } catch {
     return JSON.stringify({ error: "invalid JSON arguments" });
   }
+
+  const staticTool = staticRegistry[name];
+  if (staticTool) {
+    try {
+      return await staticTool.execute(args, ctx);
+    } catch (err) {
+      return JSON.stringify({ error: String(err) });
+    }
+  }
+
   try {
-    return await tool.execute(args, ctx);
+    if (await isCoolifyTool(name)) {
+      return await callCoolifyTool(name, args);
+    }
   } catch (err) {
     return JSON.stringify({ error: String(err) });
   }
+
+  return JSON.stringify({ error: `unknown tool: ${name}` });
 }

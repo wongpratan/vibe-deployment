@@ -1,8 +1,7 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionMessageToolCall } from "openai/resources/chat/completions";
 import { env } from "../env.js";
-import { toolSchemas, dispatchTool } from "../tools/index.js";
-import type { ToolContext } from "../tools/deployment.js";
+import { loadToolSchemas, dispatchTool, type ToolContext } from "../tools/index.js";
 import type { InputRequestParams } from "./inputRequest.js";
 
 const client = new OpenAI({
@@ -25,18 +24,18 @@ export async function* runChat(
   ctx: ToolContext
 ): AsyncGenerator<StreamEvent> {
   const messages = [...history];
+  const tools = await loadToolSchemas();
 
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
     const stream = await client.chat.completions.create({
       model: env.MODEL,
       messages,
-      tools: toolSchemas,
+      tools,
       stream: true,
     });
 
     let assistantContent = "";
     const toolCallAcc: Record<number, { id: string; name: string; args: string }> = {};
-    let finishReason: string | null = null;
 
     for await (const chunk of stream) {
       const choice = chunk.choices[0];
@@ -57,8 +56,6 @@ export async function* runChat(
           if (tc.function?.arguments) toolCallAcc[idx].args += tc.function.arguments;
         }
       }
-
-      if (choice.finish_reason) finishReason = choice.finish_reason;
     }
 
     const toolCalls = Object.values(toolCallAcc);
@@ -109,12 +106,6 @@ export async function* runChat(
         tool_call_id: tc.id,
         content: result,
       });
-    }
-
-    if (finishReason !== "tool_calls") {
-      // model stopped for another reason after emitting tool calls — bail
-      yield { type: "done", messages };
-      return;
     }
   }
 
