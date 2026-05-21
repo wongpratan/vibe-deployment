@@ -340,6 +340,7 @@ body {
 .bubble-assistant {
   background: var(--bg-elev-2);
   align-self: flex-start;
+  max-width: 95%;
 }
 
 .bubble-user {
@@ -365,7 +366,102 @@ body {
 }
 
 .bubble-body {
+  min-width: 0;
+}
+
+.bubble-user .bubble-body,
+.bubble-tool .bubble-body {
   white-space: pre-wrap;
+}
+
+.bubble-assistant .bubble-body > :first-child {
+  margin-top: 0;
+}
+.bubble-assistant .bubble-body > :last-child {
+  margin-bottom: 0;
+}
+.bubble-assistant .bubble-body p {
+  margin: 0 0 var(--space-2);
+  line-height: 1.55;
+}
+.bubble-assistant .bubble-body h1,
+.bubble-assistant .bubble-body h2,
+.bubble-assistant .bubble-body h3,
+.bubble-assistant .bubble-body h4 {
+  margin: var(--space-3) 0 var(--space-2);
+  line-height: 1.3;
+}
+.bubble-assistant .bubble-body ul,
+.bubble-assistant .bubble-body ol {
+  margin: 0 0 var(--space-2);
+  padding-left: 1.4em;
+}
+.bubble-assistant .bubble-body li {
+  margin: 0.15em 0;
+}
+.bubble-assistant .bubble-body a {
+  color: var(--accent, #4ea1ff);
+  text-decoration: none;
+  word-break: break-all;
+}
+.bubble-assistant .bubble-body a:hover {
+  text-decoration: underline;
+}
+.bubble-assistant .bubble-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  background: var(--bg-elev-1, rgba(255, 255, 255, 0.06));
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-sm, 4px);
+}
+.bubble-assistant .bubble-body pre {
+  background: var(--bg-elev-1, rgba(255, 255, 255, 0.06));
+  padding: var(--space-2);
+  border-radius: var(--radius-md, 6px);
+  overflow-x: auto;
+  margin: 0 0 var(--space-2);
+}
+.bubble-assistant .bubble-body pre code {
+  background: transparent;
+  padding: 0;
+}
+.bubble-assistant .bubble-body blockquote {
+  margin: 0 0 var(--space-2);
+  padding-left: var(--space-2);
+  border-left: 3px solid var(--border-dim);
+  opacity: 0.85;
+}
+.bubble-assistant .bubble-body hr {
+  border: 0;
+  border-top: 1px solid var(--border-dim);
+  margin: var(--space-3) 0;
+}
+
+/* Tables */
+.bubble-assistant .bubble-body table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  margin: 0 0 var(--space-2);
+}
+.bubble-assistant .bubble-body thead {
+  background: var(--bg-elev-1, rgba(255, 255, 255, 0.05));
+}
+.bubble-assistant .bubble-body th,
+.bubble-assistant .bubble-body td {
+  border: 1px solid var(--border-dim);
+  padding: var(--space-1) var(--space-2);
+  text-align: left;
+  vertical-align: top;
+}
+.bubble-assistant .bubble-body th {
+  font-weight: 600;
+}
+.bubble-assistant .bubble-body tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.025);
 }
 
 /* Dynamic input card */

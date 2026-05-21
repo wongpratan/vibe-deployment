@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bot, LogOut, Menu, Trash2, User } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import DynamicInput, { type InputRequest } from "./DynamicInput";
 
 type Msg =
@@ -365,7 +367,11 @@ export default function ChatWindow() {
                   )}
                 </div>
                 <div className="bubble-body">
-                  {m.content}
+                  {m.role === "assistant" ? (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                  ) : (
+                    m.content
+                  )}
                   {busy && i === messages.length - 1 && m.role === "assistant" && (
                     <span className="blink-cursor">▍</span>
                   )}
