@@ -3,20 +3,20 @@ import type { ChatCompletionMessageParam, ChatCompletionMessageToolCall } from "
 import { env } from "../env.js";
 import { toolSchemas, dispatchTool } from "../tools/index.js";
 import type { ToolContext } from "../tools/deployment.js";
-import type { InputRequestParams } from "./inputRequest.js";
+import type { InputRequestParams, EnvVarSpec } from "./inputRequest.js";
 
 const client = new OpenAI({
   baseURL: env.OPENAI_BASE_URL,
   apiKey: env.OPENAI_API_KEY,
 });
 
-const MAX_TOOL_ITERATIONS = 5;
+const MAX_TOOL_ITERATIONS = 20;
 
 export type StreamEvent =
   | { type: "text"; delta: string }
   | { type: "tool_call"; name: string; args: string }
   | { type: "tool_result"; name: string; result: string }
-  | { type: "input_request"; inputType: string; label: string; fieldName?: string; placeholder?: string; options?: string[]; required?: boolean; toolCallId: string }
+  | { type: "input_request"; inputType: string; label: string; fieldName?: string; placeholder?: string; defaultValue?: string; options?: string[]; required?: boolean; envVarSpec?: EnvVarSpec[]; toolCallId: string }
   | { type: "done"; messages: ChatCompletionMessageParam[] }
   | { type: "error"; message: string };
 
@@ -94,8 +94,10 @@ export async function* runChat(
           label: params.label,
           fieldName: params.fieldName,
           placeholder: params.placeholder,
+          defaultValue: params.defaultValue,
           options: params.options,
           required: params.required,
+          envVarSpec: params.envVarSpec,
           toolCallId: tc.id,
         };
         yield { type: "done", messages };

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, boolean } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -26,11 +26,41 @@ export const deploymentRequirements = pgTable("deployment_requirements", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const reviewResults = pgTable("review_results", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  chatId: uuid("chat_id").references(() => chats.id, { onDelete: "set null" }),
+  repoUrl: text("repo_url").notNull(),
+  buildPack: text("build_pack"),
+  ready: boolean("ready").notNull().default(false),
+  issues: jsonb("issues"),
+  notes: text("notes"),
+  summary: text("summary"),
+  nameGuess: text("name_guess"),
+  envVarsDetected: jsonb("env_vars_detected"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const coordinatorRequirements = pgTable("coordinator_requirements", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  chatId: uuid("chat_id").references(() => chats.id, { onDelete: "set null" }),
+  appName: text("app_name").notNull(),
+  envVars: jsonb("env_vars").notNull(),
+  collected: boolean("collected").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const messages = pgTable("messages", {
   id: uuid("id").defaultRandom().primaryKey(),
   chatId: uuid("chat_id")
     .notNull()
     .references(() => chats.id, { onDelete: "cascade" }),
+  agentId: text("agent_id").notNull().default("reviewer"),
   role: text("role").notNull(),
   content: text("content").notNull().default(""),
   toolCalls: jsonb("tool_calls"),

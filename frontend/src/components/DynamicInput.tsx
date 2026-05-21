@@ -12,15 +12,25 @@ export type InputTypeId =
   | "date"
   | "file"
   | "password"
-  | "select";
+  | "select"
+  | "env_vars";
+
+export interface EnvVarSpec {
+  key: string;
+  required: boolean;
+  source?: string;
+  defaultValue?: string;
+}
 
 export interface InputRequest {
   inputType: InputTypeId;
   label: string;
   fieldName?: string;
   placeholder?: string;
+  defaultValue?: string;
   options?: string[];
   required?: boolean;
+  envVarSpec?: EnvVarSpec[];
   toolCallId: string;
 }
 
@@ -40,13 +50,32 @@ function isValidGitHubUrl(value: string): boolean {
 }
 
 export default function DynamicInput({ request, onSubmit, disabled = false }: Props) {
-  const [value, setValue] = useState(request.inputType === "color" ? "#000000" : "");
+  const [value, setValue] = useState(
+    request.inputType === "color"
+      ? request.defaultValue || "#000000"
+      : request.defaultValue ?? "",
+  );
   const [showPassword, setShowPassword] = useState(false);
   const [fileError, setFileError] = useState("");
+  const [envValues, setEnvValues] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const v of request.envVarSpec ?? []) init[v.key] = v.defaultValue ?? "";
+    return init;
+  });
+  const [envVisible, setEnvVisible] = useState<Record<string, boolean>>({});
 
   const MAX_FILE_SIZE = 1024 * 1024;
 
+  function getEnvValidationError(): string {
+    const missing = (request.envVarSpec ?? [])
+      .filter((v) => v.required && !envValues[v.key]?.trim())
+      .map((v) => v.key);
+    if (missing.length) return `Required: ${missing.join(", ")}.`;
+    return "";
+  }
+
   function getValidationError(): string {
+    if (request.inputType === "env_vars") return getEnvValidationError();
     if (!value && request.required) return "Required.";
     if (request.inputType === "github_url" && value && !isValidGitHubUrl(value)) {
       return "Must be a valid github.com/owner/repo URL.";
@@ -55,7 +84,14 @@ export default function DynamicInput({ request, onSubmit, disabled = false }: Pr
   }
 
   const validationError = getValidationError();
-  const canSubmit = !disabled && !validationError && (request.required ? !!value : true);
+  const canSubmit =
+    !disabled &&
+    !validationError &&
+    (request.inputType === "env_vars"
+      ? true
+      : request.required
+      ? !!value
+      : true);
 
   async function handleFileSubmit(file: File) {
     if (file.size > MAX_FILE_SIZE) {
@@ -69,6 +105,16 @@ export default function DynamicInput({ request, onSubmit, disabled = false }: Pr
   function handleSubmit() {
     if (!canSubmit) return;
     if (request.inputType === "file") return; // handled by file input change
+    if (request.inputType === "env_vars") {
+      const envVars = (request.envVarSpec ?? []).map((v) => ({
+        key: v.key,
+        value: envValues[v.key] ?? "",
+        required: v.required,
+        ...(v.source ? { source: v.source } : {}),
+      }));
+      onSubmit(JSON.stringify({ envVars }));
+      return;
+    }
     onSubmit(value);
   }
 
@@ -221,6 +267,46 @@ export default function DynamicInput({ request, onSubmit, disabled = false }: Pr
           </select>
         );
 
+      case "env_vars": {
+        const spec = request.envVarSpec ?? [];
+        if (spec.length === 0) {
+          return <div className="env-empty">No environment variables detected.</div>;
+        }
+        return (
+          <div className="env-list">
+            {spec.map((v) => {
+              const visible = envVisible[v.key];
+              return (
+                <div key={v.key} className="env-row">
+                  <div className="env-key">
+                    <code>{v.key}</code>
+                    {v.required && <span className="env-required">required</span>}
+                    {v.source && <span className="env-source" title={v.source}>{v.source}</span>}
+                  </div>
+                  <div className="env-value-row">
+                    <input
+                      type={visible ? "text" : "password"}
+                      value={envValues[v.key] ?? ""}
+                      onChange={(e) => setEnvValues((s) => ({ ...s, [v.key]: e.target.value }))}
+                      placeholder={v.defaultValue ?? ""}
+                      className="input"
+                      disabled={disabled}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setEnvVisible((s) => ({ ...s, [v.key]: !visible }))}
+                      className="btn-toggle-pw"
+                    >
+                      {visible ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      }
+
       default:
         return (
           <input
@@ -256,7 +342,9 @@ export default function DynamicInput({ request, onSubmit, disabled = false }: Pr
               </button>
             )}
           </div>
-          {validationError && value && <div className="error-text">{validationError}</div>}
+          {validationError && (value || request.inputType === "env_vars") && (
+            <div className="error-text">{validationError}</div>
+          )}
         </div>
       </div>
     </div>

@@ -8,13 +8,23 @@ export type InputTypeId =
   | "date"
   | "file"
   | "password"
-  | "select";
+  | "select"
+  | "env_vars";
+
+export interface EnvVarSpec {
+  key: string;
+  required: boolean;
+  source?: string;
+  defaultValue?: string;
+}
 
 export interface InputRequestParams {
   inputType: InputTypeId;
   label: string;
   fieldName?: string;
   placeholder?: string;
+  defaultValue?: string;
   options?: string[];
   required?: boolean;
+  envVarSpec?: EnvVarSpec[];
 }
