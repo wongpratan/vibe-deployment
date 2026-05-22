@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bot, Check, ClipboardCheck, LogOut, Menu, Network, Rocket, Trash2, User, X } from "lucide-react";
+import { Bot, Check, ClipboardCheck, LogOut, Menu, Network, RefreshCcw, Rocket, Trash2, User, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import DynamicInput, { type InputRequest } from "./DynamicInput";
@@ -93,6 +93,7 @@ type DeployerContext = {
   collected: boolean;
   appName: string | null;
   envVarKeys: string[];
+  envVars: { key: string; maskedValue: string }[];
   buildPack: string | null;
 };
 
@@ -105,7 +106,16 @@ function deployerGreeting(ctx: DeployerContext | null): Msg {
   }
   const bp = ctx.buildPack ?? "not detected";
   const name = ctx.appName ?? "(not set)";
-  const envs = ctx.envVarKeys.length > 0 ? ctx.envVarKeys.join(", ") : "none";
+  const envBlock =
+    ctx.envVars.length > 0
+      ? [
+          "**Environment Variables:**",
+          "",
+          "| Key | Value |",
+          "| --- | --- |",
+          ...ctx.envVars.map((v) => `| \`${v.key}\` | \`${v.maskedValue}\` |`),
+        ].join("\n")
+      : "- **Environment Variables:** none";
   return {
     role: "assistant",
     content: [
@@ -113,7 +123,8 @@ function deployerGreeting(ctx: DeployerContext | null): Msg {
       "",
       `- **Build Pack:** ${bp}`,
       `- **Application Name:** ${name}`,
-      `- **Environment Variables:** ${envs}`,
+      "",
+      envBlock,
       "",
       "Would you like to **deploy now**, or go **back to the Coordinator** to change the settings?",
     ].join("\n"),
@@ -224,6 +235,33 @@ export default function ChatWindow() {
     setDeployerContext(null);
   }
 
+  async function restartWorkflow() {
+    const id = chatIdRef.current;
+    if (!id) return;
+    if (Object.values(busyByAgent).some(Boolean)) return;
+    const ok = window.confirm(
+      "Re-enter Git repo URL? This will clear all Reviewer, Coordinator, and Deployer progress for this app and restart the workflow from the beginning.",
+    );
+    if (!ok) return;
+    const res = await fetch(`/api/chats/${id}/restart`, { method: "POST" });
+    if (res.status === 401) {
+      router.push("/login");
+      return;
+    }
+    if (!res.ok) {
+      alert(`Restart failed (${res.status}). Try again.`);
+      return;
+    }
+    setMessagesByAgent(initialMessages());
+    setPendingInputByAgent(initialPendingInput());
+    setBusyByAgent(initialFlag(false));
+    setSaveStatusByAgent(initialFlag<SaveStatus>(null));
+    setToolStatusByAgent(initialFlag<string | null>(null));
+    setReadyForCoordinatorByAgent(initialFlag(false));
+    setDeployerContext(null);
+    setActiveAgent("reviewer");
+  }
+
   async function fetchAgentMessages(id: string, agent: AgentId): Promise<Msg[]> {
     const res = await fetch(`/api/chats/${id}/messages?agentId=${agent}`);
     if (res.status === 401) {
@@ -251,7 +289,7 @@ export default function ChatWindow() {
       fetchAgentMessages(id, "deployer"),
       fetch(`/api/chats/${id}/review-status`).then((r) => (r.ok ? r.json() : { ready: false })),
       fetch(`/api/chats/${id}/coordinator-status`).then((r) =>
-        r.ok ? r.json() : { collected: false, appName: null, envVarKeys: [], buildPack: null },
+        r.ok ? r.json() : { collected: false, appName: null, envVarKeys: [], envVars: [], buildPack: null },
       ),
     ]);
     chatIdRef.current = id;
@@ -265,6 +303,7 @@ export default function ChatWindow() {
       collected: !!coordinatorStatus.collected,
       appName: coordinatorStatus.appName ?? null,
       envVarKeys: Array.isArray(coordinatorStatus.envVarKeys) ? coordinatorStatus.envVarKeys : [],
+      envVars: Array.isArray(coordinatorStatus.envVars) ? coordinatorStatus.envVars : [],
       buildPack: coordinatorStatus.buildPack ?? null,
     };
     const deployerWithSummary =
@@ -404,6 +443,7 @@ export default function ChatWindow() {
                       collected: !!data.collected,
                       appName: data.appName ?? null,
                       envVarKeys: Array.isArray(data.envVarKeys) ? data.envVarKeys : [],
+                      envVars: Array.isArray(data.envVars) ? data.envVars : [],
                       buildPack: data.buildPack ?? null,
                     };
                     setDeployerContext(ctx);
@@ -661,7 +701,26 @@ export default function ChatWindow() {
           </div>
         ) : activeAgent === "reviewer" && reviewerReady ? (
           <div className="composer-gated">
-            <span>Repo is ready for Coolify deployment.</span>
+            <button
+              onClick={restartWorkflow}
+              title="Re-enter Git repo URL (restart workflow)"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "4px 8px",
+                fontSize: "12px",
+                background: "transparent",
+                border: "1px solid var(--border-dim)",
+                color: "var(--text-dim)",
+                borderRadius: "var(--radius-sm)",
+                cursor: "pointer",
+              }}
+            >
+              <RefreshCcw size={12} strokeWidth={2} />
+              <span>Re-enter URL</span>
+            </button>
+            <span style={{ marginLeft: "auto" }}>Repo is ready for Coolify deployment.</span>
             <button onClick={() => setActiveAgent("coordinator")} className="btn btn-primary">
               Talk to Coordinator →
             </button>

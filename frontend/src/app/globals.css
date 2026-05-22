@@ -180,6 +180,12 @@ body {
   gap: 10px;
 }
 
+.app-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .agent-tabs {
   display: flex;
   gap: var(--space-1);
