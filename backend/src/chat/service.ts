@@ -1,9 +1,10 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionMessageToolCall } from "openai/resources/chat/completions";
 import { env } from "../env.js";
-import { toolSchemas, dispatchTool } from "../tools/index.js";
+import { getToolsForAgent } from "../tools/index.js";
 import type { ToolContext } from "../tools/deployment.js";
 import type { InputRequestParams, EnvVarSpec } from "./inputRequest.js";
+import type { AgentId } from "./prompts.js";
 
 const client = new OpenAI({
   baseURL: env.OPENAI_BASE_URL,
@@ -22,15 +23,17 @@ export type StreamEvent =
 
 export async function* runChat(
   history: ChatCompletionMessageParam[],
-  ctx: ToolContext
+  ctx: ToolContext,
+  agentId: AgentId,
 ): AsyncGenerator<StreamEvent> {
   const messages = [...history];
+  const { schemas, dispatch } = await getToolsForAgent(agentId);
 
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
     const stream = await client.chat.completions.create({
       model: env.MODEL,
       messages,
-      tools: toolSchemas,
+      tools: schemas,
       stream: true,
     });
 
@@ -104,7 +107,7 @@ export async function* runChat(
         return;
       }
       yield { type: "tool_call", name: tc.name, args: tc.args };
-      const result = await dispatchTool(tc.name, tc.args, ctx);
+      const result = await dispatch(tc.name, tc.args, ctx);
       yield { type: "tool_result", name: tc.name, result };
       messages.push({
         role: "tool",

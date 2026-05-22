@@ -4,6 +4,7 @@ import { messageRepository, type MessageRepository } from "./message.repository.
 import { reviewRepository, type ReviewRepository } from "./review.repository.js";
 import { coordinatorRepository, type CoordinatorRepository } from "./coordinator.repository.js";
 import { AGENT_PROMPTS, type AgentId } from "./prompts.js";
+import { env } from "../env.js";
 
 function maskEnvValue(v: unknown): string {
   if (typeof v !== "string" || v.length === 0) return "(empty)";
@@ -128,8 +129,14 @@ export function makeChatService(deps: Deps): ChatService {
             .filter((k): k is string => typeof k === "string" && k.length > 0);
           const lines = ["Coordinator context (requirements collected for this chat):"];
           if (deployerReview?.buildPack) lines.push(`buildPack: ${deployerReview.buildPack}`);
+          if (deployerReview?.repoUrl) lines.push(`repoUrl: ${deployerReview.repoUrl}`);
           lines.push(`appName: ${coords.appName}`);
           lines.push(`envVarKeys: ${JSON.stringify(envVarKeys)}`);
+          if (env.COOLIFY_APPS_DOMAIN) {
+            lines.push(`coolifyAppsDomain: ${env.COOLIFY_APPS_DOMAIN}`);
+            lines.push(`expectedAppFqdn: ${coords.appName}.${env.COOLIFY_APPS_DOMAIN}`);
+            lines.push(`expectedAppUrl: https://${coords.appName}.${env.COOLIFY_APPS_DOMAIN}`);
+          }
           out.push({ role: "system", content: lines.join("\n") });
         } else {
           out.push({

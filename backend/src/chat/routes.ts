@@ -103,7 +103,7 @@ export async function chatRoutes(app: FastifyInstance) {
     };
 
     try {
-      for await (const ev of runChat(history, { userId, chatId })) {
+      for await (const ev of runChat(history, { userId, chatId }, agentId)) {
         send(ev);
         if (ev.type === "done") {
           const finalMessages = ev.messages.slice(history.length);
