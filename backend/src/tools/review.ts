@@ -13,6 +13,11 @@ export const saveReviewResultTool = {
         required: ["repoUrl", "ready"],
         properties: {
           repoUrl: { type: "string", description: "GitHub repo URL that was reviewed." },
+          gitBranch: {
+            type: "string",
+            description:
+              "Default git branch of the repo. Pass through verbatim from clone_and_inspect_repo.defaultBranch so the Deployer can clone the correct branch.",
+          },
           ready: { type: "boolean", description: "True if repo is deployable on Coolify as-is." },
           buildPack: {
             type: "string",
@@ -90,6 +95,7 @@ export const saveReviewResultTool = {
         userId: ctx.userId,
         chatId: ctx.chatId,
         repoUrl: args.repoUrl,
+        gitBranch: args.gitBranch ?? null,
         buildPack: args.buildPack ?? null,
         ready: !!args.ready,
         issues: args.issues ?? [],

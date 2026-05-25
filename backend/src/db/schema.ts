@@ -33,6 +33,7 @@ export const reviewResults = pgTable("review_results", {
     .references(() => users.id, { onDelete: "cascade" }),
   chatId: uuid("chat_id").references(() => chats.id, { onDelete: "set null" }),
   repoUrl: text("repo_url").notNull(),
+  gitBranch: text("git_branch"),
   buildPack: text("build_pack"),
   ready: boolean("ready").notNull().default(false),
   issues: jsonb("issues"),

@@ -175,6 +175,31 @@ function validateRef(input: unknown): string | null {
   return input;
 }
 
+async function detectDefaultBranch(dest: string): Promise<string | null> {
+  return await new Promise((resolve) => {
+    const child = spawn("git", ["-C", dest, "rev-parse", "--abbrev-ref", "HEAD"], {
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    const timer = setTimeout(() => child.kill("SIGKILL"), 5000);
+    child.stdout.on("data", (d) => {
+      if (stdout.length < 256) stdout += d.toString();
+    });
+    child.on("error", () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code !== 0) return resolve(null);
+      const name = stdout.trim();
+      if (!name || name === "HEAD") return resolve(null);
+      resolve(validateRef(name));
+    });
+  });
+}
+
 async function runGitClone(repoUrl: string, ref: string | null, dest: string): Promise<{ ok: true } | { ok: false; reason: string }> {
   const args = ["clone", "--depth", "1", "--single-branch"];
   if (ref) args.push("--branch", ref);
@@ -456,10 +481,12 @@ export const cloneAndInspectRepoTool = {
 
       const envVarsDetected = await scanEnvVars(dir);
       const nameGuess = guessAppName(files, v.url.toString());
+      const defaultBranch = ref ?? (await detectDefaultBranch(dir));
 
       return JSON.stringify({
         repoUrl: v.url.toString(),
         ref: ref ?? null,
+        defaultBranch,
         rootEntries,
         files,
         lockfiles,

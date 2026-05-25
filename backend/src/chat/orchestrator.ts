@@ -130,6 +130,7 @@ export function makeChatService(deps: Deps): ChatService {
           const lines = ["Coordinator context (requirements collected for this chat):"];
           if (deployerReview?.buildPack) lines.push(`buildPack: ${deployerReview.buildPack}`);
           if (deployerReview?.repoUrl) lines.push(`repoUrl: ${deployerReview.repoUrl}`);
+          lines.push(`gitBranch: ${deployerReview?.gitBranch ?? "main"}`);
           if (deployerReview?.buildPack === "dockercompose") {
             lines.push(`dockerComposeLocation: ${deployerReview.dockerComposeLocation ?? "(not set)"}`);
           }
