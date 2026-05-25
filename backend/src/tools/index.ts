@@ -5,6 +5,7 @@ import { cloneAndInspectRepoTool } from "./cloneRepo.js";
 import { detectBuildPackTool } from "./detectBuildPack.js";
 import { searchTool } from "./search.js";
 import { setCoolifyEnvVarsTool } from "./coolifySetEnvVars.js";
+import { setCoolifyComposeLocationTool } from "./coolifySetComposeLocation.js";
 import { getCoolifyTools, dispatchCoolifyTool, isCoolifyToolName } from "../mcp/coolifyClient.js";
 import type { AgentId } from "../chat/prompts.js";
 
@@ -88,6 +89,7 @@ const registry: Record<string, Tool> = {
   web_search: webSearchTool,
   request_user_input: requestUserInputTool,
   set_coolify_env_vars: setCoolifyEnvVarsTool,
+  set_coolify_compose_location: setCoolifyComposeLocationTool,
 };
 
 const AGENT_TOOL_NAMES: Record<AgentId, string[]> = {
@@ -99,7 +101,7 @@ const AGENT_TOOL_NAMES: Record<AgentId, string[]> = {
     "request_user_input",
   ],
   coordinator: ["save_coordinator_requirements", "request_user_input"],
-  deployer: ["set_coolify_env_vars", "request_user_input"],
+  deployer: ["set_coolify_env_vars", "set_coolify_compose_location", "request_user_input"],
 };
 
 export type AgentTools = {

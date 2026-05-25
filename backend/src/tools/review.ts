@@ -72,6 +72,18 @@ export const saveReviewResultTool = {
     },
   },
   execute: async (args: any, ctx: ToolContext): Promise<string> => {
+    if (args.buildPack === "dockercompose" && !args.dockerComposeLocation) {
+      return JSON.stringify({
+        status: "error",
+        reason: "dockerComposeLocation required when buildPack='dockercompose'",
+      });
+    }
+    if (args.buildPack === "dockerfile" && !args.dockerfileLocation) {
+      return JSON.stringify({
+        status: "error",
+        reason: "dockerfileLocation required when buildPack='dockerfile'",
+      });
+    }
     const [row] = await db
       .insert(schema.reviewResults)
       .values({
@@ -96,6 +108,8 @@ export const saveReviewResultTool = {
       buildPack: row.buildPack,
       hasSummary: !!row.summary,
       nameGuess: row.nameGuess ?? null,
+      dockerComposeLocation: row.dockerComposeLocation ?? null,
+      dockerfileLocation: row.dockerfileLocation ?? null,
     });
   },
 };
