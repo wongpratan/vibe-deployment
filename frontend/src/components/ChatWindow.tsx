@@ -95,6 +95,7 @@ type DeployerContext = {
   envVarKeys: string[];
   envVars: { key: string; maskedValue: string }[];
   buildPack: string | null;
+  targetUrl: string | null;
 };
 
 function deployerGreeting(ctx: DeployerContext | null): Msg {
@@ -116,18 +117,17 @@ function deployerGreeting(ctx: DeployerContext | null): Msg {
           ...ctx.envVars.map((v) => `| \`${v.key}\` | \`${v.maskedValue}\` |`),
         ].join("\n")
       : "- **Environment Variables:** none";
+  const lines = [
+    "Hi! I'm the Deployer. Here's what's ready to deploy:",
+    "",
+    `- **Build Pack:** ${bp}`,
+    `- **Application Name:** ${name}`,
+  ];
+  if (ctx.targetUrl) lines.push(`- **Target URL:** <${ctx.targetUrl}>`);
+  lines.push("", envBlock, "", "Would you like to **deploy now**, or go **back to the Coordinator** to change the settings?");
   return {
     role: "assistant",
-    content: [
-      "Hi! I'm the Deployer. Here's what's ready to deploy:",
-      "",
-      `- **Build Pack:** ${bp}`,
-      `- **Application Name:** ${name}`,
-      "",
-      envBlock,
-      "",
-      "Would you like to **deploy now**, or go **back to the Coordinator** to change the settings?",
-    ].join("\n"),
+    content: lines.join("\n"),
   };
 }
 
@@ -305,6 +305,7 @@ export default function ChatWindow() {
       envVarKeys: Array.isArray(coordinatorStatus.envVarKeys) ? coordinatorStatus.envVarKeys : [],
       envVars: Array.isArray(coordinatorStatus.envVars) ? coordinatorStatus.envVars : [],
       buildPack: coordinatorStatus.buildPack ?? null,
+      targetUrl: coordinatorStatus.expectedAppUrl ?? null,
     };
     const deployerWithSummary =
       ctx.collected && deployer.length === 1 && deployer[0].role === "assistant"
@@ -445,6 +446,7 @@ export default function ChatWindow() {
                       envVarKeys: Array.isArray(data.envVarKeys) ? data.envVarKeys : [],
                       envVars: Array.isArray(data.envVars) ? data.envVars : [],
                       buildPack: data.buildPack ?? null,
+                      targetUrl: data.expectedAppUrl ?? null,
                     };
                     setDeployerContext(ctx);
                     setMessagesByAgent((s) => {

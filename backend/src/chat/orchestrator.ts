@@ -18,6 +18,7 @@ export interface CoordinatorStatus {
   envVarKeys: string[];
   envVars: Array<{ key: string; maskedValue: string }>;
   buildPack: string | null;
+  expectedAppUrl: string | null;
 }
 
 export interface ReviewStatus {
@@ -79,12 +80,17 @@ export function makeChatService(deps: Deps): ChatService {
         .filter((v): v is { key: string; value?: string } => typeof v?.key === "string" && v.key.length > 0)
         .map((v) => ({ key: v.key, maskedValue: maskEnvValue(v.value) }));
       const envVarKeys = envVars.map((v) => v.key);
+      const expectedAppUrl =
+        coords?.appName && env.COOLIFY_APPS_DOMAIN
+          ? `https://${coords.appName}.${env.COOLIFY_APPS_DOMAIN}`
+          : null;
       return {
         collected: !!coords,
         appName: coords?.appName ?? null,
         envVarKeys,
         envVars,
         buildPack: review?.buildPack ?? null,
+        expectedAppUrl,
       };
     },
 
@@ -141,7 +147,6 @@ export function makeChatService(deps: Deps): ChatService {
           lines.push(`envVarKeys: ${JSON.stringify(envVarKeys)}`);
           if (env.COOLIFY_APPS_DOMAIN) {
             lines.push(`coolifyAppsDomain: ${env.COOLIFY_APPS_DOMAIN}`);
-            lines.push(`expectedAppFqdn: ${coords.appName}.${env.COOLIFY_APPS_DOMAIN}`);
             lines.push(`expectedAppUrl: https://${coords.appName}.${env.COOLIFY_APPS_DOMAIN}`);
           }
           out.push({ role: "system", content: lines.join("\n") });

@@ -6,6 +6,7 @@ import { detectBuildPackTool } from "./detectBuildPack.js";
 import { searchTool } from "./search.js";
 import { setCoolifyEnvVarsTool } from "./coolifySetEnvVars.js";
 import { setCoolifyComposeLocationTool } from "./coolifySetComposeLocation.js";
+import { waitForDeploymentTool } from "./coolifyWaitForDeployment.js";
 import { getCoolifyTools, dispatchCoolifyTool, isCoolifyToolName } from "../mcp/coolifyClient.js";
 import type { AgentId } from "../chat/prompts.js";
 
@@ -90,6 +91,7 @@ const registry: Record<string, Tool> = {
   request_user_input: requestUserInputTool,
   set_coolify_env_vars: setCoolifyEnvVarsTool,
   set_coolify_compose_location: setCoolifyComposeLocationTool,
+  wait_for_deployment: waitForDeploymentTool,
 };
 
 const AGENT_TOOL_NAMES: Record<AgentId, string[]> = {
@@ -101,7 +103,7 @@ const AGENT_TOOL_NAMES: Record<AgentId, string[]> = {
     "request_user_input",
   ],
   coordinator: ["save_coordinator_requirements", "request_user_input"],
-  deployer: ["set_coolify_env_vars", "set_coolify_compose_location", "request_user_input"],
+  deployer: ["set_coolify_env_vars", "set_coolify_compose_location", "wait_for_deployment", "request_user_input"],
 };
 
 export type AgentTools = {
