@@ -61,7 +61,7 @@ const REVIEWER_INITIAL_INPUT: InputRequest = {
   inputType: "github_url",
   label: "GitHub repo URL to review?",
   fieldName: "git repo URL",
-  placeholder: "https://github.com/owner/repo",
+  placeholder: "https://github.com/owner/repo.git",
   required: true,
   toolCallId: "",
 };

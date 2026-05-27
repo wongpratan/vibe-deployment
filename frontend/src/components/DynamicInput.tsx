@@ -133,7 +133,7 @@ export default function DynamicInput({ request, onSubmit, disabled = false }: Pr
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-              placeholder={request.placeholder ?? "https://github.com/owner/repo"}
+              placeholder={request.placeholder ?? "https://github.com/owner/repo.git"}
               className="input"
               disabled={disabled}
               autoFocus
