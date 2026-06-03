@@ -13,5 +13,12 @@ export default defineConfig({
       COOLIFY_ACCESS_TOKEN: "test-token",
       BRAVE_API_KEY: "brave-test",
     },
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "lcov"],
+      reportsDirectory: "./coverage",
+      include: ["src/**/*.ts"],
+      exclude: ["src/**/*.test.ts", "src/**/*.d.ts", "src/db/migrations/**"],
+    },
   },
 });
