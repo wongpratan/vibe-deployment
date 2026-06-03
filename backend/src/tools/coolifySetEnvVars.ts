@@ -1,6 +1,6 @@
 import { coordinatorRepository } from "../chat/coordinator.repository.js";
 import { callCoolifyToolByOriginalName } from "../mcp/coolifyClient.js";
-import type { ToolContext } from "./deployment.js";
+import type { ToolContext } from "./types.js";
 
 export const setCoolifyEnvVarsTool = {
   schema: {

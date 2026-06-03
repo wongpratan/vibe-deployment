@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bot, Check, ClipboardCheck, LogOut, Menu, Network, RefreshCcw, Rocket, Trash2, User, X } from "lucide-react";
+import { Bot, ClipboardCheck, LogOut, Menu, Network, RefreshCcw, Rocket, Trash2, User } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import DynamicInput, { type InputRequest } from "./DynamicInput";
@@ -11,7 +11,7 @@ type Msg =
   | { role: "user" | "assistant"; content: string }
   | { role: "tool"; name: string; content: string };
 
-type AppItem = { id: string; title: string; createdAt: string };
+type AppItem = { id: string; title: string; createdAt: string; appName: string | null };
 
 type AgentId = "reviewer" | "coordinator" | "deployer";
 
@@ -21,7 +21,6 @@ const AGENTS: { id: AgentId; label: string; Icon: typeof ClipboardCheck }[] = [
   { id: "deployer", label: "Deployer", Icon: Rocket },
 ];
 
-type SaveStatus = { phase: "saving" | "saved" | "error"; detail?: string } | null;
 type AgentMap<T> = Record<AgentId, T>;
 
 function maskEnvVarsPayload(raw: string): string | null {
@@ -139,9 +138,21 @@ const AGENT_INITIAL: AgentMap<{ greeting: Msg; input: InputRequest | null }> = {
   deployer: { greeting: DEPLOYER_GREETING, input: null },
 };
 
-const SAVE_TOOL = "save_deployment_requirements";
-const REVIEW_TOOL = "save_review_result";
-const COORDINATOR_TOOL = "save_coordinator_requirements";
+type WorkflowState = {
+  reviewer: { open: true; ready: boolean; nameGuess: string | null };
+  coordinator: {
+    open: boolean;
+    collected: boolean;
+    appName: string | null;
+    envVarKeys: string[];
+    envVars: { key: string; maskedValue: string }[];
+  };
+  deployer: {
+    open: boolean;
+    buildPack: string | null;
+    targetUrl: string | null;
+  };
+};
 
 function initialMessages(): AgentMap<Msg[]> {
   return {
@@ -168,7 +179,6 @@ export default function ChatWindow() {
   const [messagesByAgent, setMessagesByAgent] = useState<AgentMap<Msg[]>>(initialMessages);
   const [input, setInput] = useState("");
   const [busyByAgent, setBusyByAgent] = useState<AgentMap<boolean>>(() => initialFlag(false));
-  const [saveStatusByAgent, setSaveStatusByAgent] = useState<AgentMap<SaveStatus>>(() => initialFlag<SaveStatus>(null));
   const [pendingInputByAgent, setPendingInputByAgent] = useState<AgentMap<InputRequest | null>>(initialPendingInput);
   const [toolStatusByAgent, setToolStatusByAgent] = useState<AgentMap<string | null>>(() => initialFlag<string | null>(null));
   const [readyForCoordinatorByAgent, setReadyForCoordinatorByAgent] = useState<AgentMap<boolean>>(() => initialFlag(false));
@@ -181,7 +191,6 @@ export default function ChatWindow() {
 
   const messages = messagesByAgent[activeAgent];
   const busy = busyByAgent[activeAgent];
-  const saveStatus = saveStatusByAgent[activeAgent];
   const pendingInput = pendingInputByAgent[activeAgent];
   const toolStatus = toolStatusByAgent[activeAgent];
   const reviewerReady = readyForCoordinatorByAgent.reviewer;
@@ -195,17 +204,54 @@ export default function ChatWindow() {
   function setBusyFor(agent: AgentId, value: boolean) {
     setBusyByAgent((s) => ({ ...s, [agent]: value }));
   }
-  function setSaveStatusFor(agent: AgentId, value: SaveStatus) {
-    setSaveStatusByAgent((s) => ({ ...s, [agent]: value }));
-  }
   function setPendingInputFor(agent: AgentId, value: InputRequest | null) {
     setPendingInputByAgent((s) => ({ ...s, [agent]: value }));
   }
   function setToolStatusFor(agent: AgentId, value: string | null) {
     setToolStatusByAgent((s) => ({ ...s, [agent]: value }));
   }
-  function setReadyForCoordinatorFor(agent: AgentId, value: boolean) {
-    setReadyForCoordinatorByAgent((s) => ({ ...s, [agent]: value }));
+  function applyWorkflowState(s: WorkflowState) {
+    const nameGuess = s.reviewer.nameGuess;
+    const ctx: DeployerContext = {
+      collected: s.coordinator.collected,
+      appName: s.coordinator.appName,
+      envVarKeys: s.coordinator.envVarKeys,
+      envVars: s.coordinator.envVars,
+      buildPack: s.deployer.buildPack,
+      targetUrl: s.deployer.targetUrl,
+    };
+    setReadyForCoordinatorByAgent((prev) => ({ ...prev, reviewer: s.reviewer.ready }));
+    setDeployerContext(ctx);
+    if (s.reviewer.ready) {
+      setMessagesByAgent((m) => {
+        const cur = m.coordinator;
+        if (nameGuess && cur.length === 1 && cur[0].role === "assistant") {
+          return { ...m, coordinator: [coordinatorGreeting(nameGuess)] };
+        }
+        return m;
+      });
+      setPendingInputByAgent((p) => {
+        if (p.coordinator || s.coordinator.collected) return p;
+        return { ...p, coordinator: coordinatorAppNameInput(nameGuess) };
+      });
+    }
+    if (ctx.collected) {
+      setMessagesByAgent((m) => {
+        const cur = m.deployer;
+        if (cur.length === 1 && cur[0].role === "assistant") {
+          return { ...m, deployer: [deployerGreeting(ctx)] };
+        }
+        return m;
+      });
+    }
+  }
+
+  async function refreshWorkflowState(id: string): Promise<WorkflowState | null> {
+    const res = await fetch(`/api/chats/${id}/state`);
+    if (!res.ok) return null;
+    const s = (await res.json()) as WorkflowState;
+    applyWorkflowState(s);
+    return s;
   }
 
   async function refreshApps() {
@@ -224,13 +270,22 @@ export default function ChatWindow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const name = deployerContext?.appName;
+    if (!name || !activeChatId) return;
+    setApps((prev) =>
+      prev.map((a) =>
+        a.id === activeChatId && a.appName !== name ? { ...a, appName: name } : a
+      )
+    );
+  }, [deployerContext?.appName, activeChatId]);
+
   function resetToNew() {
     chatIdRef.current = null;
     setActiveChatId(null);
     setMessagesByAgent(initialMessages());
     setPendingInputByAgent(initialPendingInput());
     setBusyByAgent(initialFlag(false));
-    setSaveStatusByAgent(initialFlag<SaveStatus>(null));
     setReadyForCoordinatorByAgent(initialFlag(false));
     setDeployerContext(null);
   }
@@ -255,7 +310,6 @@ export default function ChatWindow() {
     setMessagesByAgent(initialMessages());
     setPendingInputByAgent(initialPendingInput());
     setBusyByAgent(initialFlag(false));
-    setSaveStatusByAgent(initialFlag<SaveStatus>(null));
     setToolStatusByAgent(initialFlag<string | null>(null));
     setReadyForCoordinatorByAgent(initialFlag(false));
     setDeployerContext(null);
@@ -283,45 +337,20 @@ export default function ChatWindow() {
 
   async function loadChat(id: string) {
     if (Object.values(busyByAgent).some(Boolean)) return;
-    const [reviewer, coordinator, deployer, reviewStatus, coordinatorStatus] = await Promise.all([
+    const [reviewer, coordinator, deployer, state] = await Promise.all([
       fetchAgentMessages(id, "reviewer"),
       fetchAgentMessages(id, "coordinator"),
       fetchAgentMessages(id, "deployer"),
-      fetch(`/api/chats/${id}/review-status`).then((r) => (r.ok ? r.json() : { ready: false })),
-      fetch(`/api/chats/${id}/coordinator-status`).then((r) =>
-        r.ok ? r.json() : { collected: false, appName: null, envVarKeys: [], envVars: [], buildPack: null },
-      ),
+      fetch(`/api/chats/${id}/state`).then((r) => (r.ok ? (r.json() as Promise<WorkflowState>) : null)),
     ]);
     chatIdRef.current = id;
     setActiveChatId(id);
-    const nameGuess: string | null = reviewStatus?.nameGuess ?? null;
-    const coordinatorWithGuess =
-      nameGuess && coordinator.length === 1 && coordinator[0].role === "assistant"
-        ? [coordinatorGreeting(nameGuess)]
-        : coordinator;
-    const ctx: DeployerContext = {
-      collected: !!coordinatorStatus.collected,
-      appName: coordinatorStatus.appName ?? null,
-      envVarKeys: Array.isArray(coordinatorStatus.envVarKeys) ? coordinatorStatus.envVarKeys : [],
-      envVars: Array.isArray(coordinatorStatus.envVars) ? coordinatorStatus.envVars : [],
-      buildPack: coordinatorStatus.buildPack ?? null,
-      targetUrl: coordinatorStatus.expectedAppUrl ?? null,
-    };
-    const deployerWithSummary =
-      ctx.collected && deployer.length === 1 && deployer[0].role === "assistant"
-        ? [deployerGreeting(ctx)]
-        : deployer;
-    setMessagesByAgent({ reviewer, coordinator: coordinatorWithGuess, deployer: deployerWithSummary });
-    const coordinatorNeedsAppName =
-      !!reviewStatus.ready && !ctx.collected && coordinatorWithGuess.length === 1;
-    setPendingInputByAgent({
-      ...initialFlag<InputRequest | null>(null),
-      coordinator: coordinatorNeedsAppName ? coordinatorAppNameInput(nameGuess) : null,
-    });
+    setMessagesByAgent({ reviewer, coordinator, deployer });
+    setPendingInputByAgent(initialFlag<InputRequest | null>(null));
     setBusyByAgent(initialFlag(false));
-    setSaveStatusByAgent(initialFlag<SaveStatus>(null));
-    setReadyForCoordinatorByAgent({ ...initialFlag(false), reviewer: !!reviewStatus.ready });
-    setDeployerContext(ctx);
+    setReadyForCoordinatorByAgent(initialFlag(false));
+    setDeployerContext(null);
+    if (state) applyWorkflowState(state);
   }
 
   async function deleteApp(id: string) {
@@ -404,75 +433,13 @@ export default function ChatWindow() {
             return [...m.slice(0, -1), { ...last, content: last.content + ev.delta }];
           });
         } else if (ev.type === "tool_call") {
-          if (ev.name === SAVE_TOOL) {
-            setSaveStatusFor(agent, { phase: "saving" });
-          } else {
-            setToolStatusFor(agent, ev.name);
-            patchMessages(agent, (m) => [...m, { role: "assistant", content: "" }]);
-          }
+          setToolStatusFor(agent, ev.name);
+          patchMessages(agent, (m) => [...m, { role: "assistant", content: "" }]);
         } else if (ev.type === "tool_result") {
-          if (ev.name === REVIEW_TOOL) {
-            let parsed: any = null;
-            try { parsed = JSON.parse(ev.result); } catch {}
-            if (parsed?.status === "saved" && parsed?.ready === true) {
-              setReadyForCoordinatorFor(agent, true);
-              const guess: string | null =
-                typeof parsed.nameGuess === "string" && parsed.nameGuess ? parsed.nameGuess : null;
-              setMessagesByAgent((s) => {
-                const cur = s.coordinator;
-                const onlyGreeting = cur.length === 1 && cur[0].role === "assistant";
-                if (!onlyGreeting) return s;
-                return { ...s, coordinator: [coordinatorGreeting(guess)] };
-              });
-              setPendingInputByAgent((s) => {
-                if (s.coordinator) return s;
-                return { ...s, coordinator: coordinatorAppNameInput(guess) };
-              });
-            }
-            setToolStatusFor(agent, null);
-          } else if (ev.name === COORDINATOR_TOOL) {
-            let parsed: any = null;
-            try { parsed = JSON.parse(ev.result); } catch {}
-            if (parsed?.status === "saved" && parsed?.collected === true) {
-              const cid = chatIdRef.current;
-              if (cid) {
-                fetch(`/api/chats/${cid}/coordinator-status`)
-                  .then((r) => (r.ok ? r.json() : null))
-                  .then((data) => {
-                    if (!data) return;
-                    const ctx: DeployerContext = {
-                      collected: !!data.collected,
-                      appName: data.appName ?? null,
-                      envVarKeys: Array.isArray(data.envVarKeys) ? data.envVarKeys : [],
-                      envVars: Array.isArray(data.envVars) ? data.envVars : [],
-                      buildPack: data.buildPack ?? null,
-                      targetUrl: data.expectedAppUrl ?? null,
-                    };
-                    setDeployerContext(ctx);
-                    setMessagesByAgent((s) => {
-                      const cur = s.deployer;
-                      const onlyGreeting = cur.length === 1 && cur[0].role === "assistant";
-                      if (!onlyGreeting || !ctx.collected) return s;
-                      return { ...s, deployer: [deployerGreeting(ctx)] };
-                    });
-                  })
-                  .catch(() => {});
-              }
-            }
-            setToolStatusFor(agent, null);
-          } else if (ev.name === SAVE_TOOL) {
-            let parsed: any = null;
-            try { parsed = JSON.parse(ev.result); } catch {}
-            if (parsed?.status === "saved") {
-              setSaveStatusFor(agent, { phase: "saved" });
-              setTimeout(() => setSaveStatusFor(agent, null), 4000);
-              refreshApps();
-            } else {
-              setSaveStatusFor(agent, { phase: "error", detail: parsed?.error ?? ev.result });
-            }
-          } else {
-            setToolStatusFor(agent, null);
-          }
+          setToolStatusFor(agent, null);
+        } else if (ev.type === "state_changed") {
+          const cid = chatIdRef.current;
+          if (cid) refreshWorkflowState(cid).catch(() => {});
         } else if (ev.type === "input_request") {
           patchMessages(agent, (m) => {
             const last = m[m.length - 1];
@@ -517,16 +484,6 @@ export default function ChatWindow() {
     router.push("/login");
   }
 
-  const toastClass = saveStatus
-    ? `toast ${
-        saveStatus.phase === "saving"
-          ? "is-saving"
-          : saveStatus.phase === "saved"
-          ? "is-saved"
-          : "is-error"
-      }`
-    : "";
-
   return (
     <div className="app-shell">
       {sidebarOpen && (
@@ -543,14 +500,17 @@ export default function ChatWindow() {
             ) : (
               apps.map((a) => {
                 const active = a.id === activeChatId;
+                const titleText = unwrapUserPayload(a.title);
+                const hasAppName = !!(a.appName && a.appName.length > 0);
+                const label = hasAppName ? a.appName! : (titleText || "Untitled");
                 return (
                   <div key={a.id} className={`app-row${active ? " is-active" : ""}`}>
                     <button
                       onClick={() => loadChat(a.id)}
-                      className="app-row-button"
-                      title={unwrapUserPayload(a.title)}
+                      className={`app-row-button${hasAppName ? " is-app-named" : ""}`}
+                      title={titleText}
                     >
-                      {unwrapUserPayload(a.title) || "Untitled"}
+                      {label}
                     </button>
                     <button
                       onClick={() => deleteApp(a.id)}
@@ -569,36 +529,6 @@ export default function ChatWindow() {
       )}
 
       <div className="main-col">
-        {saveStatus && (
-          <div className={toastClass}>
-            {saveStatus.phase === "saving" && (
-              <>
-                <span className="save-spinner" />
-                <span>Saving deployment requirements…</span>
-              </>
-            )}
-            {saveStatus.phase === "saved" && (
-              <>
-                <Check size={16} strokeWidth={3} />
-                <span>Deployment saved</span>
-              </>
-            )}
-            {saveStatus.phase === "error" && (
-              <>
-                <X size={16} strokeWidth={3} />
-                <span>{saveStatus.detail ?? "Save failed"}</span>
-                <button
-                  onClick={() => setSaveStatusFor(activeAgent, null)}
-                  className="btn-toast-dismiss"
-                  aria-label="Dismiss"
-                >
-                  ×
-                </button>
-              </>
-            )}
-          </div>
-        )}
-
         <header className="app-header">
           <div className="app-header-left">
             <button onClick={() => setSidebarOpen((v) => !v)} title="Toggle applications" className="btn-icon">

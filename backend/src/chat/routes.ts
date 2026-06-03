@@ -7,6 +7,7 @@ import { agentIdSchema } from "./prompts.js";
 import { chatRepository } from "./chat.repository.js";
 import { messageRepository } from "./message.repository.js";
 import { chatService, ChatNotFoundError } from "./orchestrator.js";
+import { workflowGate, GATE_SIGNAL_TOOLS } from "./workflowGate.js";
 
 const sendSchema = z.object({
   chatId: z.string().uuid().optional(),
@@ -35,18 +36,11 @@ export async function chatRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get<{ Params: { id: string } }>("/chats/:id/review-status", async (req, reply) => {
+  app.get<{ Params: { id: string } }>("/chats/:id/state", async (req, reply) => {
     const userId = req.user!.sub;
     const chat = await chatService.ensureChatForUser(req.params.id, userId);
     if (!chat) return reply.code(404).send({ error: "not found" });
-    return chatService.getReviewStatus(chat.id);
-  });
-
-  app.get<{ Params: { id: string } }>("/chats/:id/coordinator-status", async (req, reply) => {
-    const userId = req.user!.sub;
-    const chat = await chatService.ensureChatForUser(req.params.id, userId);
-    if (!chat) return reply.code(404).send({ error: "not found" });
-    return chatService.getCoordinatorStatus(chat.id, userId);
+    return workflowGate.state(chat.id, userId);
   });
 
   app.post<{ Params: { id: string } }>("/chats/:id/restart", async (req, reply) => {
@@ -71,6 +65,10 @@ export async function chatRoutes(app: FastifyInstance) {
     const { message, agentId } = parsed.data;
     const userId = req.user!.sub;
 
+    if (!parsed.data.chatId && agentId !== "reviewer") {
+      return reply.code(403).send({ error: "stage not open", agentId });
+    }
+
     let chat;
     try {
       chat = await chatService.getOrCreateChat(parsed.data.chatId, userId, message);
@@ -79,6 +77,11 @@ export async function chatRoutes(app: FastifyInstance) {
       throw err;
     }
     const chatId = chat.id;
+
+    if (parsed.data.chatId && !(await workflowGate.isOpen(chatId, userId, agentId))) {
+      const state = await workflowGate.state(chatId, userId);
+      return reply.code(403).send({ error: "stage not open", agentId, state });
+    }
 
     const prior = await messageRepository.listByChatAndAgent(chatId, agentId);
     const history: ChatCompletionMessageParam[] = chatService.toHistory(prior);
@@ -105,6 +108,9 @@ export async function chatRoutes(app: FastifyInstance) {
     try {
       for await (const ev of runChat(history, { userId, chatId }, agentId)) {
         send(ev);
+        if (ev.type === "tool_result" && GATE_SIGNAL_TOOLS.has(ev.name)) {
+          send({ type: "state_changed" });
+        }
         if (ev.type === "done") {
           const finalMessages = ev.messages.slice(history.length);
           for (const m of finalMessages) {

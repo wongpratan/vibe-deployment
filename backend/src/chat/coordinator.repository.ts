@@ -6,7 +6,6 @@ export type CoordinatorRequirements = typeof schema.coordinatorRequirements.$inf
 export interface CoordinatorRepository {
   findLatestCollected(chatId: string, userId: string): Promise<CoordinatorRequirements | null>;
   deleteCoordinatorForChatAndUser(chatId: string, userId: string): Promise<void>;
-  deleteDeploymentForChatAndUser(chatId: string, userId: string): Promise<void>;
 }
 
 export class DrizzleCoordinatorRepository implements CoordinatorRepository {
@@ -39,16 +38,6 @@ export class DrizzleCoordinatorRepository implements CoordinatorRepository {
       );
   }
 
-  async deleteDeploymentForChatAndUser(chatId: string, userId: string): Promise<void> {
-    await this.database
-      .delete(schema.deploymentRequirements)
-      .where(
-        and(
-          eq(schema.deploymentRequirements.chatId, chatId),
-          eq(schema.deploymentRequirements.userId, userId),
-        ),
-      );
-  }
 }
 
 export const coordinatorRepository: CoordinatorRepository = new DrizzleCoordinatorRepository();

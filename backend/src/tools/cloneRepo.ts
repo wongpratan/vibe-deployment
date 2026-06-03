@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { ToolContext } from "./deployment.js";
+import type { ToolContext } from "./types.js";
 
 const HOST_ALLOWLIST = new Set([
   "github.com",

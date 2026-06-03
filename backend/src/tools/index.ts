@@ -1,4 +1,4 @@
-import { saveDeploymentRequirementsTool, type ToolContext } from "./deployment.js";
+import type { ToolContext } from "./types.js";
 import { saveReviewResultTool } from "./review.js";
 import { saveCoordinatorRequirementsTool } from "./coordinator.js";
 import { cloneAndInspectRepoTool } from "./cloneRepo.js";
@@ -83,7 +83,6 @@ const webSearchTool: Tool = {
 };
 
 const registry: Record<string, Tool> = {
-  save_deployment_requirements: saveDeploymentRequirementsTool,
   save_review_result: saveReviewResultTool,
   save_coordinator_requirements: saveCoordinatorRequirementsTool,
   clone_and_inspect_repo: cloneAndInspectRepoTool,

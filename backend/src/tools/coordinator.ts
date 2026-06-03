@@ -1,5 +1,5 @@
 import { db, schema } from "../db/client.js";
-import type { ToolContext } from "./deployment.js";
+import type { ToolContext } from "./types.js";
 
 export const saveCoordinatorRequirementsTool = {
   schema: {
