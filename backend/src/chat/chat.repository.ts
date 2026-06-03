@@ -21,18 +21,20 @@ export class DrizzleChatRepository implements ChatRepository {
   constructor(private readonly database: typeof db = db) {}
 
   listForUser(userId: string): Promise<ChatListItem[]> {
+    const latestAppName = sql<string | null>`(
+      SELECT cr.app_name FROM coordinator_requirements cr
+      WHERE cr.chat_id = ${schema.chats.id} AND cr.collected = true
+      ORDER BY cr.created_at DESC LIMIT 1
+    )`.as("appName");
+
     return this.database
       .select({
         id: schema.chats.id,
         title: schema.chats.title,
         createdAt: schema.chats.createdAt,
-        appName: sql<string | null>`${schema.deploymentRequirements.requirements}->>'appName'`.as("appName"),
+        appName: latestAppName,
       })
       .from(schema.chats)
-      .leftJoin(
-        schema.deploymentRequirements,
-        eq(schema.deploymentRequirements.chatId, schema.chats.id),
-      )
       .where(eq(schema.chats.userId, userId))
       .orderBy(asc(schema.chats.createdAt));
   }
