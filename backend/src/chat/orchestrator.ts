@@ -3,19 +3,12 @@ import { chatRepository, type ChatRepository, type Chat } from "./chat.repositor
 import { messageRepository, type MessageRepository } from "./message.repository.js";
 import { reviewRepository, type ReviewRepository } from "./review.repository.js";
 import { coordinatorRepository, type CoordinatorRepository } from "./coordinator.repository.js";
-import { AGENT_PROMPTS, type AgentId } from "./prompts.js";
-import { env } from "../env.js";
 
 export interface ChatService {
   ensureChatForUser(chatId: string, userId: string): Promise<Chat | null>;
   getOrCreateChat(chatId: string | undefined, userId: string, message: string): Promise<Chat>;
   restartChat(chatId: string, userId: string): Promise<void>;
   deleteChat(chatId: string): Promise<void>;
-  buildInitialSystemContext(
-    chatId: string,
-    userId: string,
-    agentId: AgentId,
-  ): Promise<ChatCompletionMessageParam[]>;
   toHistory(messages: Awaited<ReturnType<MessageRepository["listByChatAndAgent"]>>): ChatCompletionMessageParam[];
 }
 
@@ -51,61 +44,6 @@ export function makeChatService(deps: Deps): ChatService {
 
     async deleteChat(chatId) {
       await chats.deleteById(chatId);
-    },
-
-    async buildInitialSystemContext(chatId, userId, agentId) {
-      const out: ChatCompletionMessageParam[] = [
-        { role: "system", content: AGENT_PROMPTS[agentId].system },
-      ];
-      if (agentId === "coordinator") {
-        const review = await reviews.findLatestReadyForUser(chatId, userId);
-        if (review) {
-          out.push({
-            role: "system",
-            content: [
-              "Review context (latest ready review for this chat):",
-              `repoUrl: ${review.repoUrl}`,
-              `buildPack: ${review.buildPack ?? "unknown"}`,
-              `nameGuess: ${review.nameGuess ?? ""}`,
-              `envVarsDetected: ${JSON.stringify(review.envVarsDetected ?? [])}`,
-              `reviewSummary: ${review.summary ?? ""}`,
-            ].join("\n"),
-          });
-        }
-      }
-      if (agentId === "deployer") {
-        const coords = await coordinators.findLatestCollected(chatId, userId);
-        if (coords) {
-          const deployerReview = await reviews.findLatestReadyForUser(chatId, userId);
-          // gate guarantees coords is non-null when this runs
-          const envVarsArr = Array.isArray(coords.envVars) ? (coords.envVars as Array<{ key?: string }>) : [];
-          const envVarKeys = envVarsArr
-            .map((v) => v?.key)
-            .filter((k): k is string => typeof k === "string" && k.length > 0);
-          const lines = ["Coordinator context (requirements collected for this chat):"];
-          if (deployerReview?.buildPack) lines.push(`buildPack: ${deployerReview.buildPack}`);
-          if (deployerReview?.repoUrl) lines.push(`repoUrl: ${deployerReview.repoUrl}`);
-          lines.push(
-            deployerReview?.gitBranch
-              ? `gitBranch: ${deployerReview.gitBranch}`
-              : `gitBranch: unknown — ask the user what branch to deploy from`,
-          );
-          if (deployerReview?.buildPack === "dockercompose") {
-            lines.push(`dockerComposeLocation: ${deployerReview.dockerComposeLocation ?? "(not set)"}`);
-          }
-          if (deployerReview?.buildPack === "dockerfile") {
-            lines.push(`dockerfileLocation: ${deployerReview.dockerfileLocation ?? "(not set)"}`);
-          }
-          lines.push(`appName: ${coords.appName}`);
-          lines.push(`envVarKeys: ${JSON.stringify(envVarKeys)}`);
-          if (env.COOLIFY_APPS_DOMAIN) {
-            lines.push(`coolifyAppsDomain: ${env.COOLIFY_APPS_DOMAIN}`);
-            lines.push(`expectedAppUrl: https://${coords.appName}.${env.COOLIFY_APPS_DOMAIN}`);
-          }
-          out.push({ role: "system", content: lines.join("\n") });
-        }
-      }
-      return out;
     },
 
     toHistory(prior) {

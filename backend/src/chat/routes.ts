@@ -7,7 +7,7 @@ import { agentIdSchema } from "./prompts.js";
 import { chatRepository } from "./chat.repository.js";
 import { messageRepository } from "./message.repository.js";
 import { chatService, ChatNotFoundError } from "./orchestrator.js";
-import { workflowGate, GATE_SIGNAL_TOOLS } from "./workflowGate.js";
+import { workflowGate, GATE_SIGNAL_TOOLS, toWireState } from "./workflowGate.js";
 
 const sendSchema = z.object({
   chatId: z.string().uuid().optional(),
@@ -40,7 +40,7 @@ export async function chatRoutes(app: FastifyInstance) {
     const userId = req.user!.sub;
     const chat = await chatService.ensureChatForUser(req.params.id, userId);
     if (!chat) return reply.code(404).send({ error: "not found" });
-    return workflowGate.state(chat.id, userId);
+    return toWireState(await workflowGate.state(chat.id, userId));
   });
 
   app.post<{ Params: { id: string } }>("/chats/:id/restart", async (req, reply) => {
@@ -79,7 +79,7 @@ export async function chatRoutes(app: FastifyInstance) {
     const chatId = chat.id;
 
     if (parsed.data.chatId && !(await workflowGate.isOpen(chatId, userId, agentId))) {
-      const state = await workflowGate.state(chatId, userId);
+      const state = toWireState(await workflowGate.state(chatId, userId));
       return reply.code(403).send({ error: "stage not open", agentId, state });
     }
 
@@ -87,7 +87,7 @@ export async function chatRoutes(app: FastifyInstance) {
     const history: ChatCompletionMessageParam[] = chatService.toHistory(prior);
 
     if (history.length === 0) {
-      const initial = await chatService.buildInitialSystemContext(chatId, userId, agentId);
+      const initial = await workflowGate.systemContextPrompt(chatId, userId, agentId);
       history.unshift(...initial);
     }
 
