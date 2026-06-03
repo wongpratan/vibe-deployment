@@ -1,0 +1,8 @@
+{
+  "name": "global-page-nexus",
+  "private": true,
+  "scripts": {
+    "test": "npm --prefix backend test && npm --prefix frontend test",
+    "test:coverage": "npm --prefix backend run test:coverage && npm --prefix frontend run test:coverage"
+  }
+}
