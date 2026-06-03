@@ -3,11 +3,20 @@ import type { ToolContext } from "./types.js";
 
 const ctx = {} as ToolContext;
 
+const { envState } = vi.hoisted(() => ({
+  envState: {
+    env: {
+      COOLIFY_BASE_URL: undefined as string | undefined,
+      COOLIFY_ACCESS_TOKEN: undefined as string | undefined,
+    },
+  },
+}));
+
+vi.mock("../env.js", () => envState);
+
 beforeEach(() => {
   vi.resetModules();
-  vi.doMock("../env.js", () => ({
-    env: { COOLIFY_BASE_URL: undefined, COOLIFY_ACCESS_TOKEN: undefined },
-  }));
+  envState.env = { COOLIFY_BASE_URL: undefined, COOLIFY_ACCESS_TOKEN: undefined };
 });
 
 describe("coolify HTTP tools — env not configured", () => {

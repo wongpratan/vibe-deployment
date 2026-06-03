@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { ClientCtor, TransportCtor, connect, listTools, callTool } = vi.hoisted(() => ({
+const { ClientCtor, TransportCtor, connect, listTools, callTool, envState } = vi.hoisted(() => ({
   ClientCtor: vi.fn(),
   TransportCtor: vi.fn(),
   connect: vi.fn(async () => {}),
   listTools: vi.fn(),
   callTool: vi.fn(),
+  envState: {
+    env: {
+      COOLIFY_BASE_URL: "https://coolify.test" as string | undefined,
+      COOLIFY_ACCESS_TOKEN: "tkn" as string | undefined,
+    },
+  },
 }));
 
 vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
@@ -27,30 +33,15 @@ vi.mock("@modelcontextprotocol/sdk/client/stdio.js", () => ({
   },
 }));
 
+vi.mock("../env.js", () => envState);
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.resetModules();
-  vi.doMock("@modelcontextprotocol/sdk/client/index.js", () => ({
-    Client: class {
-      constructor(...args: unknown[]) {
-        ClientCtor(...args);
-      }
-      connect = connect;
-      listTools = listTools;
-      callTool = callTool;
-    },
-  }));
-  vi.doMock("@modelcontextprotocol/sdk/client/stdio.js", () => ({
-    StdioClientTransport: class {
-      constructor(...args: unknown[]) {
-        TransportCtor(...args);
-      }
-    },
-  }));
-  // default to creds-configured; tests can override before importing
-  vi.doMock("../env.js", () => ({
-    env: { COOLIFY_BASE_URL: "https://coolify.test", COOLIFY_ACCESS_TOKEN: "tkn" },
-  }));
+  envState.env = {
+    COOLIFY_BASE_URL: "https://coolify.test",
+    COOLIFY_ACCESS_TOKEN: "tkn",
+  };
 });
 
 describe("isCoolifyToolName", () => {
@@ -63,10 +54,8 @@ describe("isCoolifyToolName", () => {
 
 describe("getCoolifyTools — no creds", () => {
   it("returns [] and warns once when env is missing", async () => {
+    envState.env = { COOLIFY_BASE_URL: undefined, COOLIFY_ACCESS_TOKEN: undefined };
     vi.resetModules();
-    vi.doMock("../env.js", () => ({
-      env: { COOLIFY_BASE_URL: undefined, COOLIFY_ACCESS_TOKEN: undefined },
-    }));
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const mod = await import("./coolifyClient.js");
 
@@ -126,10 +115,8 @@ describe("getCoolifyTools — with creds", () => {
 
 describe("dispatchCoolifyTool", () => {
   it("returns env-not-configured when creds missing", async () => {
+    envState.env = { COOLIFY_BASE_URL: undefined, COOLIFY_ACCESS_TOKEN: undefined };
     vi.resetModules();
-    vi.doMock("../env.js", () => ({
-      env: { COOLIFY_BASE_URL: undefined, COOLIFY_ACCESS_TOKEN: undefined },
-    }));
     const mod = await import("./coolifyClient.js");
     const out = await mod.dispatchCoolifyTool("coolify_deploy", "{}");
     expect(JSON.parse(out)).toEqual({ error: "Coolify env not configured" });
