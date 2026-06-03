@@ -171,3 +171,156 @@ describe("WorkflowGate stage progression", () => {
     expect(s.deployer.open).toBe(true);
   });
 });
+
+describe("WorkflowGate.isOpen", () => {
+  it("returns the open flag for the requested stage", async () => {
+    const review = { ready: true } as unknown as ReviewResult;
+    const gate = makeWorkflowGate({
+      reviews: fakeReviews(review),
+      coordinators: fakeCoordinators(null),
+    });
+
+    expect(await gate.isOpen("c1", "u1", "reviewer")).toBe(true);
+    expect(await gate.isOpen("c1", "u1", "coordinator")).toBe(true);
+    expect(await gate.isOpen("c1", "u1", "deployer")).toBe(false);
+  });
+});
+
+describe("WorkflowGate envVars normalization", () => {
+  it("ignores non-array envVars and entries missing a key", async () => {
+    const review = { ready: true } as unknown as ReviewResult;
+    const coords = {
+      appName: "myapp",
+      envVars: [
+        { key: "OK", value: "v" },
+        { key: "", value: "blank-key" },
+        { value: "no-key" },
+        { key: "NO_VAL" },
+      ],
+    } as unknown as CoordinatorRequirements;
+    const gate = makeWorkflowGate({
+      reviews: fakeReviews(review),
+      coordinators: fakeCoordinators(coords),
+    });
+
+    const s = await gate.state("c1", "u1");
+
+    expect(s.coordinator.envVars).toEqual([
+      { key: "OK", value: "v" },
+      { key: "NO_VAL", value: "" },
+    ]);
+  });
+
+  it("treats non-array envVars as empty", async () => {
+    const review = { ready: true } as unknown as ReviewResult;
+    const coords = {
+      appName: "myapp",
+      envVars: "not-an-array",
+    } as unknown as CoordinatorRequirements;
+    const gate = makeWorkflowGate({
+      reviews: fakeReviews(review),
+      coordinators: fakeCoordinators(coords),
+    });
+
+    const s = await gate.state("c1", "u1");
+
+    expect(s.coordinator.envVars).toEqual([]);
+  });
+});
+
+describe("WorkflowGate systemContextPrompt — deployer", () => {
+  it("includes only the agent system prompt when requirements not collected", async () => {
+    const gate = makeWorkflowGate({
+      reviews: fakeReviews({ ready: true } as unknown as ReviewResult),
+      coordinators: fakeCoordinators(null),
+    });
+
+    const msgs = await gate.systemContextPrompt("c1", "u1", "deployer");
+
+    expect(msgs).toHaveLength(1);
+  });
+
+  it("adds dockerComposeLocation line for dockercompose buildpack and includes coolify domain", async () => {
+    const review = {
+      ready: true,
+      repoUrl: "https://github.com/acme/app.git",
+      gitBranch: "main",
+      buildPack: "dockercompose",
+      dockerComposeLocation: "./docker-compose.yml",
+    } as unknown as ReviewResult;
+    const coords = {
+      appName: "acme-app",
+      envVars: [{ key: "API_KEY", value: "v" }],
+    } as unknown as CoordinatorRequirements;
+    const gate = makeWorkflowGate({
+      reviews: fakeReviews(review),
+      coordinators: fakeCoordinators(coords),
+    });
+
+    const msgs = await gate.systemContextPrompt("c1", "u1", "deployer");
+    const ctx = msgs[1].content as string;
+
+    expect(ctx).toContain("buildPack: dockercompose");
+    expect(ctx).toContain("repoUrl: https://github.com/acme/app.git");
+    expect(ctx).toContain("gitBranch: main");
+    expect(ctx).toContain("dockerComposeLocation: ./docker-compose.yml");
+    expect(ctx).not.toContain("dockerfileLocation");
+    expect(ctx).toContain("appName: acme-app");
+    expect(ctx).toContain('envVarKeys: ["API_KEY"]');
+    expect(ctx).toContain("coolifyAppsDomain: apps.test.example");
+    expect(ctx).toContain("expectedAppUrl: https://acme-app.apps.test.example");
+  });
+
+  it("adds dockerfileLocation line for dockerfile buildpack with placeholder when missing", async () => {
+    const review = {
+      ready: true,
+      buildPack: "dockerfile",
+    } as unknown as ReviewResult;
+    const coords = {
+      appName: "acme-app",
+      envVars: [],
+    } as unknown as CoordinatorRequirements;
+    const gate = makeWorkflowGate({
+      reviews: fakeReviews(review),
+      coordinators: fakeCoordinators(coords),
+    });
+
+    const msgs = await gate.systemContextPrompt("c1", "u1", "deployer");
+    const ctx = msgs[1].content as string;
+
+    expect(ctx).toContain("buildPack: dockerfile");
+    expect(ctx).toContain("dockerfileLocation: (not set)");
+    expect(ctx).not.toContain("dockerComposeLocation");
+  });
+
+  it("prompts to ask the user when gitBranch is missing", async () => {
+    const review = { ready: true, buildPack: "nixpacks" } as unknown as ReviewResult;
+    const coords = {
+      appName: "acme-app",
+      envVars: [],
+    } as unknown as CoordinatorRequirements;
+    const gate = makeWorkflowGate({
+      reviews: fakeReviews(review),
+      coordinators: fakeCoordinators(coords),
+    });
+
+    const msgs = await gate.systemContextPrompt("c1", "u1", "deployer");
+    const ctx = msgs[1].content as string;
+
+    expect(ctx).toContain("gitBranch: unknown — ask the user what branch to deploy from");
+  });
+});
+
+describe("WorkflowGate systemContextPrompt — reviewer", () => {
+  it("returns only the agent system prompt for the reviewer agent", async () => {
+    const gate = makeWorkflowGate({
+      reviews: fakeReviews({ ready: true } as unknown as ReviewResult),
+      coordinators: fakeCoordinators({ appName: "x", envVars: [] } as unknown as CoordinatorRequirements),
+    });
+
+    const msgs = await gate.systemContextPrompt("c1", "u1", "reviewer");
+
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].role).toBe("system");
+  });
+});

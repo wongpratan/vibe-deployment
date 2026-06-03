@@ -9,6 +9,9 @@ export default defineConfig({
       DATABASE_URL: "postgres://test:test@localhost:5432/test",
       JWT_SECRET: "test-secret-at-least-16-chars",
       COOLIFY_APPS_DOMAIN: "apps.test.example",
+      COOLIFY_BASE_URL: "https://coolify.test",
+      COOLIFY_ACCESS_TOKEN: "test-token",
+      BRAVE_API_KEY: "brave-test",
     },
   },
 });
