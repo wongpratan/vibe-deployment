@@ -1,4 +1,4 @@
-# global-page-nexus
+# Vibe Deployment
 
 [![Backend Tests](https://github.com/wongpratan/vibe-deployment/actions/workflows/backend-tests.yml/badge.svg)](https://github.com/wongpratan/vibe-deployment/actions/workflows/backend-tests.yml)
 [![codecov](https://codecov.io/gh/wongpratan/vibe-deployment/branch/refactor/graph/badge.svg?flag=backend)](https://codecov.io/gh/wongpratan/vibe-deployment)
