@@ -1,7 +1,7 @@
-# global-page-nexus
+# Vibe Deployment
 
 [![Backend Tests](https://github.com/wongpratan/vibe-deployment/actions/workflows/backend-tests.yml/badge.svg)](https://github.com/wongpratan/vibe-deployment/actions/workflows/backend-tests.yml)
-[![codecov](https://codecov.io/gh/wongpratan/vibe-deployment/branch/main/graph/badge.svg?flag=backend)](https://codecov.io/gh/wongpratan/vibe-deployment)
+[![codecov](https://codecov.io/gh/wongpratan/vibe-deployment/branch/refactor/graph/badge.svg?flag=backend)](https://codecov.io/gh/wongpratan/vibe-deployment)
 
 Deployment-orchestration workflow driven by three sequential LLM agents — `reviewer → coordinator → deployer` — that prepare a repo and ship it to Coolify.
 
