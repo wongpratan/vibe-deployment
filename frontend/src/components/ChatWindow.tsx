@@ -11,9 +11,9 @@ import {
   coordinatorGreeting,
   deployerGreeting,
   unwrapUserPayload,
-  type DeployerContext,
   type Msg,
 } from "@/lib/chatMessages";
+import type { WireWorkflowState } from "@/lib/workflow";
 
 type AppItem = { id: string; title: string; createdAt: string; appName: string | null };
 
@@ -53,22 +53,6 @@ const AGENT_INITIAL: AgentMap<{ greeting: Msg; input: InputRequest | null }> = {
   deployer: { greeting: DEPLOYER_GREETING, input: null },
 };
 
-type WorkflowState = {
-  reviewer: { open: true; ready: boolean; nameGuess: string | null };
-  coordinator: {
-    open: boolean;
-    collected: boolean;
-    appName: string | null;
-    envVarKeys: string[];
-    envVars: { key: string; maskedValue: string }[];
-  };
-  deployer: {
-    open: boolean;
-    buildPack: string | null;
-    targetUrl: string | null;
-  };
-};
-
 function initialMessages(): AgentMap<Msg[]> {
   return {
     reviewer: [AGENT_INITIAL.reviewer.greeting],
@@ -96,8 +80,7 @@ export default function ChatWindow() {
   const [busyByAgent, setBusyByAgent] = useState<AgentMap<boolean>>(() => initialFlag(false));
   const [pendingInputByAgent, setPendingInputByAgent] = useState<AgentMap<InputRequest | null>>(initialPendingInput);
   const [toolStatusByAgent, setToolStatusByAgent] = useState<AgentMap<string | null>>(() => initialFlag<string | null>(null));
-  const [readyForCoordinatorByAgent, setReadyForCoordinatorByAgent] = useState<AgentMap<boolean>>(() => initialFlag(false));
-  const [deployerContext, setDeployerContext] = useState<DeployerContext | null>(null);
+  const [wireState, setWireState] = useState<WireWorkflowState | null>(null);
   const chatIdRef = useRef<string | null>(null);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [apps, setApps] = useState<AppItem[]>([]);
@@ -108,9 +91,12 @@ export default function ChatWindow() {
   const busy = busyByAgent[activeAgent];
   const pendingInput = pendingInputByAgent[activeAgent];
   const toolStatus = toolStatusByAgent[activeAgent];
-  const reviewerReady = readyForCoordinatorByAgent.reviewer;
-  const isGatedCoordinator = activeAgent === "coordinator" && !reviewerReady;
-  const isGatedDeployer = activeAgent === "deployer" && !deployerContext?.collected;
+  const coord = wireState?.coordinator;
+  const deployer = wireState?.deployer;
+  const reviewerReady = wireState?.reviewer.ready ?? false;
+  const collected = coord?.collected ?? false;
+  const isGatedCoordinator = activeAgent === "coordinator" && !(coord?.open ?? false);
+  const isGatedDeployer = activeAgent === "deployer" && !(deployer?.open ?? false);
   const isGated = isGatedCoordinator || isGatedDeployer;
 
   function patchMessages(agent: AgentId, fn: (prev: Msg[]) => Msg[]) {
@@ -125,18 +111,9 @@ export default function ChatWindow() {
   function setToolStatusFor(agent: AgentId, value: string | null) {
     setToolStatusByAgent((s) => ({ ...s, [agent]: value }));
   }
-  function applyWorkflowState(s: WorkflowState) {
+  function applyWorkflowState(s: WireWorkflowState) {
+    setWireState(s);
     const nameGuess = s.reviewer.nameGuess;
-    const ctx: DeployerContext = {
-      collected: s.coordinator.collected,
-      appName: s.coordinator.appName,
-      envVarKeys: s.coordinator.envVarKeys,
-      envVars: s.coordinator.envVars,
-      buildPack: s.deployer.buildPack,
-      targetUrl: s.deployer.targetUrl,
-    };
-    setReadyForCoordinatorByAgent((prev) => ({ ...prev, reviewer: s.reviewer.ready }));
-    setDeployerContext(ctx);
     if (s.reviewer.ready) {
       setMessagesByAgent((m) => {
         const cur = m.coordinator;
@@ -150,10 +127,18 @@ export default function ChatWindow() {
         return { ...p, coordinator: coordinatorAppNameInput(nameGuess) };
       });
     }
-    if (ctx.collected) {
+    if (s.coordinator.collected) {
       setMessagesByAgent((m) => {
         const cur = m.deployer;
         if (cur.length === 1 && cur[0].role === "assistant") {
+          const ctx = {
+            collected: s.coordinator.collected,
+            appName: s.coordinator.appName,
+            envVarKeys: s.coordinator.envVarKeys,
+            envVars: s.coordinator.envVars,
+            buildPack: s.deployer.buildPack,
+            targetUrl: s.deployer.targetUrl,
+          };
           return { ...m, deployer: [deployerGreeting(ctx)] };
         }
         return m;
@@ -161,10 +146,10 @@ export default function ChatWindow() {
     }
   }
 
-  async function refreshWorkflowState(id: string): Promise<WorkflowState | null> {
+  async function refreshWorkflowState(id: string): Promise<WireWorkflowState | null> {
     const res = await fetch(`/api/chats/${id}/state`);
     if (!res.ok) return null;
-    const s = (await res.json()) as WorkflowState;
+    const s = (await res.json()) as WireWorkflowState;
     applyWorkflowState(s);
     return s;
   }
@@ -186,14 +171,14 @@ export default function ChatWindow() {
   }, []);
 
   useEffect(() => {
-    const name = deployerContext?.appName;
+    const name = coord?.appName;
     if (!name || !activeChatId) return;
     setApps((prev) =>
       prev.map((a) =>
         a.id === activeChatId && a.appName !== name ? { ...a, appName: name } : a
       )
     );
-  }, [deployerContext?.appName, activeChatId]);
+  }, [coord?.appName, activeChatId]);
 
   function resetToNew() {
     chatIdRef.current = null;
@@ -201,8 +186,7 @@ export default function ChatWindow() {
     setMessagesByAgent(initialMessages());
     setPendingInputByAgent(initialPendingInput());
     setBusyByAgent(initialFlag(false));
-    setReadyForCoordinatorByAgent(initialFlag(false));
-    setDeployerContext(null);
+    setWireState(null);
   }
 
   async function restartWorkflow() {
@@ -226,8 +210,7 @@ export default function ChatWindow() {
     setPendingInputByAgent(initialPendingInput());
     setBusyByAgent(initialFlag(false));
     setToolStatusByAgent(initialFlag<string | null>(null));
-    setReadyForCoordinatorByAgent(initialFlag(false));
-    setDeployerContext(null);
+    setWireState(null);
     setActiveAgent("reviewer");
   }
 
@@ -256,15 +239,14 @@ export default function ChatWindow() {
       fetchAgentMessages(id, "reviewer"),
       fetchAgentMessages(id, "coordinator"),
       fetchAgentMessages(id, "deployer"),
-      fetch(`/api/chats/${id}/state`).then((r) => (r.ok ? (r.json() as Promise<WorkflowState>) : null)),
+      fetch(`/api/chats/${id}/state`).then((r) => (r.ok ? (r.json() as Promise<WireWorkflowState>) : null)),
     ]);
     chatIdRef.current = id;
     setActiveChatId(id);
     setMessagesByAgent({ reviewer, coordinator, deployer });
     setPendingInputByAgent(initialFlag<InputRequest | null>(null));
     setBusyByAgent(initialFlag(false));
-    setReadyForCoordinatorByAgent(initialFlag(false));
-    setDeployerContext(null);
+    setWireState(null);
     if (state) applyWorkflowState(state);
   }
 
@@ -528,7 +510,7 @@ export default function ChatWindow() {
         </div>
 
         {activeAgent === "deployer" &&
-        deployerContext?.collected &&
+        collected &&
         messages.length === 1 &&
         messages[0].role === "assistant" &&
         !busy ? (
@@ -598,7 +580,7 @@ export default function ChatWindow() {
               }}
             />
           </div>
-        ) : activeAgent === "coordinator" && deployerContext?.collected ? (
+        ) : activeAgent === "coordinator" && collected ? (
           <div className="composer-with-handoff">
             <div className="composer">
               <input
