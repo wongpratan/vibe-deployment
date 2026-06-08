@@ -334,6 +334,205 @@ describe("ChatWindow streaming", () => {
     expect(screen.getByPlaceholderText("Your name")).toBeInTheDocument();
   });
 
+  it("shows a tool-status pill on tool_call and clears it on tool_result", async () => {
+    const encoder = new TextEncoder();
+    let push!: (ev: object) => void;
+    let close!: () => void;
+    const controllable = new ReadableStream<Uint8Array>({
+      start(controller) {
+        push = (ev) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(ev)}\n\n`));
+        close = () => controller.close();
+      },
+    });
+
+    installFetch((url) => {
+      if (url === "/api/chats") return jsonResponse([]);
+      if (url === "/api/chat") {
+        return new Response(controllable, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream", "X-Chat-Id": "tc-1" },
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+
+    const user = userEvent.setup();
+    render(<ChatWindow />);
+    await screen.findByText(/I review GitHub repos/i);
+
+    const urlInput = screen.getByPlaceholderText(/https:\/\/github\.com/i);
+    await user.type(urlInput, "https://github.com/owner/repo.git");
+    await user.click(screen.getByRole("button", { name: /Submit/i }));
+
+    push({ type: "tool_call", name: "check_repo" });
+    expect(await screen.findByText("check_repo")).toBeInTheDocument();
+
+    push({ type: "tool_result" });
+    await waitFor(() => {
+      expect(screen.queryByText("check_repo")).not.toBeInTheDocument();
+    });
+
+    close();
+  });
+
+  it("Re-enter URL confirms, POSTs /restart, and snaps back to a fresh Reviewer", async () => {
+    const calls: { url: string; method?: string }[] = [];
+    installFetch((url, init) => {
+      calls.push({ url, method: init?.method });
+      if (url === "/api/chats")
+        return jsonResponse([
+          { id: "rw-1", title: "rw", createdAt: "2026-01-01", appName: "acme-svc" },
+        ]);
+      if (url.startsWith("/api/chats/rw-1/messages")) return jsonResponse([]);
+      if (url === "/api/chats/rw-1/state") {
+        return jsonResponse({
+          reviewer: { open: true, ready: true, nameGuess: "acme-svc" },
+          coordinator: {
+            open: true,
+            collected: false,
+            appName: null,
+            envVarKeys: [],
+            envVars: [],
+          },
+          deployer: { open: false, buildPack: null, targetUrl: null },
+        });
+      }
+      if (url === "/api/chats/rw-1/restart") return new Response("", { status: 200 });
+      return new Response("", { status: 404 });
+    });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    const user = userEvent.setup();
+    render(<ChatWindow />);
+    await user.click(await screen.findByRole("button", { name: "acme-svc" }));
+
+    // Reviewer-ready handoff is showing because state.reviewer.ready=true.
+    const reenter = await screen.findByRole("button", { name: /Re-enter URL/i });
+    await user.click(reenter);
+
+    expect(confirmSpy).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(
+        calls.some((c) => c.url === "/api/chats/rw-1/restart" && c.method === "POST"),
+      ).toBe(true);
+    });
+
+    // Reviewer tab is active again with its initial input prompt; handoff is gone.
+    expect(screen.getByRole("tab", { name: /Reviewer/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.queryByRole("button", { name: /Talk to Coordinator/i })).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/https:\/\/github\.com/i)).toBeInTheDocument();
+  });
+
+  it("on coordinator.collected, surfaces a Deployer handoff with context-rich greeting", async () => {
+    installFetch((url) => {
+      if (url === "/api/chats")
+        return jsonResponse([
+          { id: "ready-1", title: "ready", createdAt: "2026-01-01", appName: "acme-svc" },
+        ]);
+      if (url.startsWith("/api/chats/ready-1/messages")) {
+        // Empty rows so each agent renders its default greeting; applyWorkflowState
+        // then swaps the deployer greeting to the context-rich variant.
+        return jsonResponse([]);
+      }
+      if (url === "/api/chats/ready-1/state") {
+        return jsonResponse({
+          reviewer: { open: true, ready: true, nameGuess: "acme-svc" },
+          coordinator: {
+            open: true,
+            collected: true,
+            appName: "acme-svc",
+            envVarKeys: ["API_KEY"],
+            envVars: [{ key: "API_KEY", maskedValue: "***" }],
+          },
+          deployer: { open: true, buildPack: "nixpacks", targetUrl: null },
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+
+    const user = userEvent.setup();
+    render(<ChatWindow />);
+
+    await user.click(await screen.findByRole("button", { name: "acme-svc" }));
+
+    // Coordinator tab gets the "Talk to Deployer" handoff once collected.
+    await user.click(screen.getByRole("tab", { name: /Coordinator/i }));
+    const toDeployer = await screen.findByRole("button", { name: /Talk to Deployer/i });
+    expect(screen.getByText(/All set: app name \+ env vars collected/i)).toBeInTheDocument();
+
+    await user.click(toDeployer);
+
+    // Deployer tab now shows the context-rich greeting and the gated Deploy/Back composer.
+    expect(screen.getByRole("tab", { name: /Deployer/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByText(/Build Pack:.*nixpacks/i)).toBeInTheDocument();
+    expect(screen.getByText(/Application Name:.*acme-svc/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Deploy/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Back to Coordinator/i })).toBeInTheDocument();
+  });
+
+  it("on state_changed with reviewer.ready, unlocks the Coordinator handoff and swaps in the nameGuess", async () => {
+    const stateCalls: string[] = [];
+    installFetch((url) => {
+      if (url === "/api/chats") return jsonResponse([]);
+      if (url === "/api/chat") {
+        return sseResponse(
+          [
+            { type: "text", delta: "Repo looks deployable." },
+            { type: "state_changed" },
+          ],
+          { "X-Chat-Id": "chat-rev-1" },
+        );
+      }
+      if (url === "/api/chats/chat-rev-1/state") {
+        stateCalls.push(url);
+        return jsonResponse({
+          reviewer: { open: true, ready: true, nameGuess: "acme-svc" },
+          coordinator: {
+            open: true,
+            collected: false,
+            appName: null,
+            envVarKeys: [],
+            envVars: [],
+          },
+          deployer: { open: false, buildPack: null, targetUrl: null },
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+
+    const user = userEvent.setup();
+    render(<ChatWindow />);
+    await screen.findByText(/I review GitHub repos/i);
+
+    const urlInput = screen.getByPlaceholderText(/https:\/\/github\.com/i);
+    await user.type(urlInput, "https://github.com/owner/repo.git");
+    await user.click(screen.getByRole("button", { name: /Submit/i }));
+
+    // Reviewer-ready handoff composer surfaces.
+    expect(
+      await screen.findByRole("button", { name: /Talk to Coordinator/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Repo is ready for Coolify deployment/i)).toBeInTheDocument();
+    await waitFor(() => expect(stateCalls.length).toBeGreaterThan(0));
+
+    // Following the handoff lands on Coordinator with the nameGuess-tailored greeting + pending input.
+    await user.click(screen.getByRole("button", { name: /Talk to Coordinator/i }));
+    expect(screen.getByRole("tab", { name: /Coordinator/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.queryByText(/Please talk to the Reviewer first/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/I suggested \*\*acme-svc\*\*/i)).toBeInTheDocument();
+    expect(screen.getByText(/Application name\?/i)).toBeInTheDocument();
+    expect(screen.getByDisplayValue("acme-svc")).toBeInTheDocument();
+  });
+
   it("renders an error bubble when /api/chat returns non-OK", async () => {
     installFetch((url) => {
       if (url === "/api/chats") return jsonResponse([]);
