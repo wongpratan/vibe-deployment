@@ -1,5 +1,5 @@
 import { env } from "../env.js";
-import type { ToolContext } from "./deployment.js";
+import type { ToolContext } from "./types.js";
 
 export const setCoolifyComposeLocationTool = {
   schema: {

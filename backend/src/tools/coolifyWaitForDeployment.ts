@@ -1,5 +1,5 @@
 import { env } from "../env.js";
-import type { ToolContext } from "./deployment.js";
+import type { ToolContext } from "./types.js";
 
 const TERMINAL_STATUSES = new Set(["finished", "failed", "cancelled", "canceled", "error"]);
 const POLL_INTERVAL_MS = 10_000;

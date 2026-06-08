@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { ToolContext } from "./deployment.js";
+import type { ToolContext } from "./types.js";
 
 const HOST_ALLOWLIST = new Set([
   "github.com",
@@ -166,7 +166,7 @@ function validateRepoUrl(input: unknown): { ok: true; url: URL } | { ok: false; 
   return { ok: true, url };
 }
 
-function validateRef(input: unknown): string | null {
+export function validateRef(input: unknown): string | null {
   if (input == null) return null;
   if (typeof input !== "string") return null;
   if (input.length === 0 || input.length > 200) return null;
@@ -231,7 +231,7 @@ async function runGitClone(repoUrl: string, ref: string | null, dest: string): P
   });
 }
 
-async function walk(
+export async function walk(
   dir: string,
   caps: { bytes: number; files: number },
 ): Promise<{ ok: true; bytes: number; files: number } | { ok: false; reason: string }> {
@@ -270,7 +270,7 @@ async function readSnippet(file: string): Promise<string> {
   }
 }
 
-function findSecrets(rootEntries: { name: string; isDir: boolean }[]): string[] {
+export function findSecrets(rootEntries: { name: string; isDir: boolean }[]): string[] {
   const found: string[] = [];
   for (const e of rootEntries) {
     if (e.isDir) continue;
@@ -285,7 +285,7 @@ function isNoiseKey(key: string): boolean {
   return ENV_VAR_NOISE_PREFIXES.some((p) => key.startsWith(p));
 }
 
-function parseDotEnvExample(content: string, sourceFile: string): EnvVarDetected[] {
+export function parseDotEnvExample(content: string, sourceFile: string): EnvVarDetected[] {
   const out: EnvVarDetected[] = [];
   for (const rawLine of content.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -306,7 +306,7 @@ function parseDotEnvExample(content: string, sourceFile: string): EnvVarDetected
   return out;
 }
 
-async function scanEnvVars(root: string): Promise<EnvVarDetected[]> {
+export async function scanEnvVars(root: string): Promise<EnvVarDetected[]> {
   const found = new Map<string, EnvVarDetected>();
 
   for (const name of ENV_EXAMPLE_FILES) {
@@ -382,7 +382,7 @@ function lastUrlSegment(repoUrl: string): string {
   }
 }
 
-function guessAppName(files: Record<string, string>, repoUrl: string): string {
+export function guessAppName(files: Record<string, string>, repoUrl: string): string {
   const pkg = files["package.json"];
   if (pkg) {
     try {

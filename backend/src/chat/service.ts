@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionMessageToolCall } from "openai/resources/chat/completions";
 import { env } from "../env.js";
 import { getToolsForAgent } from "../tools/index.js";
-import type { ToolContext } from "../tools/deployment.js";
+import type { ToolContext } from "../tools/types.js";
 import type { InputRequestParams, EnvVarSpec } from "./inputRequest.js";
 import type { AgentId } from "./prompts.js";
 

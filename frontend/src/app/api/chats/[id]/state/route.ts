@@ -9,7 +9,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   if (!token) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await ctx.params;
-  const upstream = await fetch(`${BACKEND_URL}/chats/${encodeURIComponent(id)}/coordinator-status`, {
+  const upstream = await fetch(`${BACKEND_URL}/chats/${encodeURIComponent(id)}/state`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const text = await upstream.text();

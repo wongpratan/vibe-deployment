@@ -1,4 +1,4 @@
-import type { ToolContext } from "./deployment.js";
+import type { ToolContext } from "./types.js";
 
 type BuildPack = "dockercompose" | "dockerfile" | "nixpacks" | "static" | "unknown";
 type Runtime =
