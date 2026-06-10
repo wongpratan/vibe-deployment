@@ -1,0 +1,47 @@
+name: Pullfrog PR Review
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Run pullfrog review
+        id: review
+        uses: pullfrog/pullfrog@v0
+        with:
+          model: openrouter/deepseek/deepseek-v4-pro
+          prompt: |
+            Review this PR (#${{ github.event.pull_request.number }}) against base ${{ github.event.pull_request.base.ref }}.
+            Repo layout: backend/ = Fastify + Drizzle (Vitest), frontend/ = Next.js (Vitest + Testing Library).
+            Domain: deployment-orchestration via reviewer → coordinator → deployer agent chain (see CONTEXT.md).
+            Focus on: correctness bugs, missing test coverage for new code, Drizzle migration safety, Next.js client/server boundary issues.
+            Skip style nits. Output markdown with sections: Summary, Issues (severity-ranked), Test gaps.
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+
+      - name: Post review comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BODY: ${{ steps.review.outputs.result }}
+        run: |
+          {
+            echo "🐸 **Pullfrog review**"
+            echo
+            echo "$BODY"
+          } > /tmp/pullfrog-comment.md
+          gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/pullfrog-comment.md
