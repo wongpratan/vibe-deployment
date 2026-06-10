@@ -39,7 +39,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BODY: ${{ steps.review.outputs.result }}
         run: |
-          gh pr comment ${{ github.event.pull_request.number }} \
-            --body "🐸 **Pullfrog review**
-
-$BODY"
+          {
+            echo "🐸 **Pullfrog review**"
+            echo
+            echo "$BODY"
+          } > /tmp/pullfrog-comment.md
+          gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/pullfrog-comment.md
